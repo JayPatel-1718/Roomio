@@ -1,11 +1,6 @@
-// Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+import { getAuth } from "firebase/auth";
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyBe4qKoMbia4kR8nEk2qxITvpKZz1XMO9c",
   authDomain: "roomio-admin.firebaseapp.com",
@@ -16,6 +11,7 @@ const firebaseConfig = {
   measurementId: "G-YPCXV4MQ58"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+
+// ✅ Auth works on mobile
+export const auth = getAuth(app);
