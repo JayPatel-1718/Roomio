@@ -1,0 +1,14 @@
+# EAS Build Ignore
+node_modules/
+.expo/
+dist/
+dist-electron/
+build/
+web-build/
+.git/
+.firebase/
+firebase-debug.log*
+npm-debug.log*
+*.exe
+*.zip
+*.7z

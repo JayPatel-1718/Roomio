@@ -1,19 +1,26 @@
+import { FontAwesome, Ionicons } from "@expo/vector-icons";
+import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
-import { useState, useEffect } from "react";
-import * as SplashScreen from "expo-splash-screen";
+import { useEffect, useState } from "react";
 import CustomSplash from "../components/CustomSplash";
-
-// STOP native splash from hiding automatically
-SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(true);
 
-  if (showSplash) {
+  // ✅ Improved Font Loading for Web
+  const [loaded, error] = useFonts({
+    ...Ionicons.font,
+    ...FontAwesome.font,
+  });
+
+  // Handle errors
+  useEffect(() => {
+    if (error) console.warn("Error loading fonts", error);
+  }, [error]);
+
+  if (showSplash || !loaded) {
     return <CustomSplash onFinish={() => setShowSplash(false)} />;
   }
 
-  return (
-    <Stack screenOptions={{ headerShown: false }} />
-  );
+  return <Stack screenOptions={{ headerShown: false }} />;
 }
