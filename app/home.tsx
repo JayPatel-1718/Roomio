@@ -1,95 +1,108 @@
-import { View, Text, StyleSheet, Pressable, SafeAreaView, Image } from "react-native";
-import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { Image, Pressable, SafeAreaView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 // Import your logo image
 import logoImage from "../assets/images/logo.png";
 
 export default function Home() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+
+  // Determine if the device is a desktop/tablet (width > 768) for responsive scaling
+  const isDesktop = width > 768;
+
+  // Responsive values
+  const logoSize = isDesktop ? 140 : 100;
+  const fontSizeTitle = isDesktop ? 48 : 36;
+  const fontSizeSubtitle = isDesktop ? 22 : 18;
+  const fontSizeDesc = isDesktop ? 16 : 14;
+  const featureCardWidth = isDesktop ? 200 : '45%'; // Width for grid
+  const buttonMaxWidth = isDesktop ? 400 : 300;
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-        {/* Decorative Background */}
+        {/* Decorative Background - Responsive scaling */}
         <View style={styles.backgroundDecor}>
-          <View style={styles.bgCircle1} />
-          <View style={styles.bgCircle2} />
-          <View style={styles.bgCircle3} />
-          <View style={styles.bgCircle4} />
+          <View style={[styles.bgCircle1, isDesktop && styles.bgCircle1Desktop]} />
+          <View style={[styles.bgCircle2, isDesktop && styles.bgCircle2Desktop]} />
+          <View style={[styles.bgCircle3, isDesktop && styles.bgCircle3Desktop]} />
+          <View style={[styles.bgCircle4, isDesktop && styles.bgCircle4Desktop]} />
         </View>
 
         {/* Logo Container */}
-        <View style={styles.logoContainer}>
-          <View style={styles.logoWrapper}>
-            <Image 
-              source={logoImage} 
-              style={styles.logoImage} 
+        <View style={[styles.logoContainer, { marginBottom: isDesktop ? 48 : 32 }]}>
+          <View style={[styles.logoWrapper, { width: logoSize, height: logoSize }]}>
+            <Image
+              source={logoImage}
+              style={styles.logoImage}
               resizeMode="contain"
             />
           </View>
           <View style={styles.brandContainer}>
-            <Text style={styles.title}>Roomio</Text>
+            <Text style={[styles.title, { fontSize: fontSizeTitle }]}>Roomio</Text>
             <View style={styles.badgeContainer}>
               <View style={styles.badge}>
-                <Ionicons name="shield-checkmark" size={14} color="#2563EB" />
-                <Text style={styles.badgeText}>SERVICE MANAGEMENT</Text>
+                <Ionicons name="shield-checkmark" size={isDesktop ? 18 : 14} color="#2563EB" />
+                <Text style={[styles.badgeText, { fontSize: isDesktop ? 13 : 11 }]}>SERVICE MANAGEMENT</Text>
               </View>
             </View>
           </View>
         </View>
 
         {/* Description */}
-        <View style={styles.descriptionContainer}>
-          <Text style={styles.subtitle}>
+        <View style={[styles.descriptionContainer, { marginBottom: isDesktop ? 48 : 32 }]}>
+          <Text style={[styles.subtitle, { fontSize: fontSizeSubtitle }]}>
             Complete hotel management solution
           </Text>
-          <Text style={styles.description}>
+          <Text style={[styles.description, { fontSize: fontSizeDesc }]}>
             Streamline room assignments, guest services, and hotel operations
             all in one powerful platform
           </Text>
         </View>
 
-        {/* Features Grid */}
-        <View style={styles.featuresGrid}>
-          <View style={styles.featureCard}>
+        {/* Features Grid - Adjusted for Desktop */}
+        <View style={[styles.featuresGrid, isDesktop && styles.featuresGridDesktop]}>
+          <View style={[styles.featureCard, { width: featureCardWidth }]}>
             <View style={styles.featureIcon}>
-              <Ionicons name="bed-outline" size={20} color="#2563EB" />
+              <Ionicons name="bed-outline" size={isDesktop ? 24 : 20} color="#2563EB" />
             </View>
             <Text style={styles.featureText}>Room Management</Text>
           </View>
-          <View style={styles.featureCard}>
+          <View style={[styles.featureCard, { width: featureCardWidth }]}>
             <View style={styles.featureIcon}>
-              <Ionicons name="person-outline" size={20} color="#2563EB" />
+              <Ionicons name="person-outline" size={isDesktop ? 24 : 20} color="#2563EB" />
             </View>
             <Text style={styles.featureText}>Guest Services</Text>
           </View>
-          <View style={styles.featureCard}>
+          <View style={[styles.featureCard, { width: featureCardWidth }]}>
             <View style={styles.featureIcon}>
-              <Ionicons name="restaurant-outline" size={20} color="#2563EB" />
+              <Ionicons name="restaurant-outline" size={isDesktop ? 24 : 20} color="#2563EB" />
             </View>
             <Text style={styles.featureText}>Food Orders</Text>
           </View>
-          <View style={styles.featureCard}>
+          <View style={[styles.featureCard, { width: featureCardWidth }]}>
             <View style={styles.featureIcon}>
-              <Ionicons name="analytics-outline" size={20} color="#2563EB" />
+              <Ionicons name="analytics-outline" size={isDesktop ? 24 : 20} color="#2563EB" />
             </View>
             <Text style={styles.featureText}>Analytics</Text>
           </View>
         </View>
 
         {/* CTA Button */}
-        <View style={styles.ctaContainer}>
+        <View style={[styles.ctaContainer, { marginBottom: isDesktop ? 40 : 24 }]}>
           <Pressable
             style={({ pressed }) => [
               styles.button,
               pressed && styles.buttonPressed,
+              { maxWidth: buttonMaxWidth }
             ]}
             onPress={() => router.push("/admin-login")}
           >
             <View style={styles.buttonContent}>
               <Text style={styles.buttonText}>Get Started</Text>
-              <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+              <Ionicons name="arrow-forward" size={isDesktop ? 22 : 20} color="#FFFFFF" />
             </View>
           </Pressable>
           <Text style={styles.helperText}>
@@ -128,6 +141,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    overflow: 'hidden',
   },
   bgCircle1: {
     position: "absolute",
@@ -138,6 +152,13 @@ const styles = StyleSheet.create({
     borderRadius: 125,
     backgroundColor: "rgba(37, 99, 235, 0.08)",
   },
+  bgCircle1Desktop: {
+    top: -150,
+    right: -100,
+    width: 400,
+    height: 400,
+    borderRadius: 200,
+  },
   bgCircle2: {
     position: "absolute",
     top: 120,
@@ -146,6 +167,12 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 100,
     backgroundColor: "rgba(37, 99, 235, 0.06)",
+  },
+  bgCircle2Desktop: {
+    left: -150,
+    width: 350,
+    height: 350,
+    borderRadius: 175,
   },
   bgCircle3: {
     position: "absolute",
@@ -156,6 +183,13 @@ const styles = StyleSheet.create({
     borderRadius: 90,
     backgroundColor: "rgba(37, 99, 235, 0.05)",
   },
+  bgCircle3Desktop: {
+    bottom: -100,
+    right: -100,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+  },
   bgCircle4: {
     position: "absolute",
     bottom: 100,
@@ -165,13 +199,17 @@ const styles = StyleSheet.create({
     borderRadius: 75,
     backgroundColor: "rgba(37, 99, 235, 0.04)",
   },
+  bgCircle4Desktop: {
+    bottom: "20%",
+    left: -120,
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+  },
   logoContainer: {
     alignItems: "center",
-    marginBottom: 32,
   },
   logoWrapper: {
-    width: 100,
-    height: 100,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#2563EB",
@@ -189,7 +227,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   title: {
-    fontSize: 36,
     fontWeight: "700",
     color: "#111827",
     letterSpacing: 1,
@@ -207,24 +244,20 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   badgeText: {
-    fontSize: 11,
     color: "#2563EB",
     fontWeight: "700",
     letterSpacing: 1.5,
   },
   descriptionContainer: {
     alignItems: "center",
-    marginBottom: 32,
     paddingHorizontal: 16,
   },
   subtitle: {
-    fontSize: 18,
     fontWeight: "600",
     color: "#374151",
     marginBottom: 8,
   },
   description: {
-    fontSize: 14,
     color: "#6B7280",
     textAlign: "center",
     lineHeight: 20,
@@ -234,11 +267,13 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     justifyContent: "center",
     gap: 12,
-    marginBottom: 40,
     paddingHorizontal: 8,
   },
+  featuresGridDesktop: {
+    gap: 24,
+    maxWidth: 900,
+  },
   featureCard: {
-    width: "45%",
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 16,
@@ -269,7 +304,6 @@ const styles = StyleSheet.create({
   ctaContainer: {
     width: "100%",
     alignItems: "center",
-    marginBottom: 24,
   },
   button: {
     backgroundColor: "#2563EB",
@@ -282,7 +316,6 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
     width: "100%",
-    maxWidth: 300,
   },
   buttonPressed: {
     backgroundColor: "#1D4ED8",
