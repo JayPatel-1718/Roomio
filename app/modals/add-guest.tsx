@@ -11,8 +11,9 @@ import {
   Platform,
   ScrollView,
   StatusBar,
+  Modal,
 } from "react-native";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   collection,
@@ -29,7 +30,6 @@ import {
 import { db, auth } from "../../firebase/firebaseConfig";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import {
   getUserRoomsRef,
   getUserRoomRef,
@@ -50,8 +50,13 @@ export default function AddGuest() {
     tomorrow.setHours(11, 0, 0, 0);
     return tomorrow;
   });
-  const [showCheckinPicker, setShowCheckinPicker] = useState(false);
-  const [showCheckoutPicker, setShowCheckoutPicker] = useState(false);
+
+  // Separate states for date and time pickers for better mobile UX
+  const [showCheckinDate, setShowCheckinDate] = useState(false);
+  const [showCheckinTime, setShowCheckinTime] = useState(false);
+  const [showCheckoutDate, setShowCheckoutDate] = useState(false);
+  const [showCheckoutTime, setShowCheckoutTime] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [assignedRoom, setAssignedRoom] = useState<number | null>(null);
   const [selectedMeals, setSelectedMeals] = useState<Meal[]>([]);
@@ -111,12 +116,14 @@ export default function AddGuest() {
         input[type="datetime-local"] {
           color-scheme: light;
           accent-color: #2563EB;
+          cursor: pointer;
         }
         input[type="datetime-local"]::-webkit-calendar-picker-indicator {
           filter: invert(0.5);
           cursor: pointer;
           opacity: 0.7;
           transition: opacity 0.2s ease;
+          padding: 4px;
         }
         input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
           opacity: 1;
@@ -332,6 +339,60 @@ export default function AddGuest() {
     });
   };
 
+  const formatDisplayDate = (date: Date) => {
+    return date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+  };
+
+  const formatDisplayTime = (date: Date) => {
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+
+  // Mobile: Handle date selection for checkin
+  const onCheckinDateChange = (_event: any, selectedDate?: Date) => {
+    setShowCheckinDate(false);
+    if (selectedDate && checkinDate) {
+      const newDate = new Date(checkinDate);
+      newDate.setFullYear(selectedDate.getFullYear());
+      newDate.setMonth(selectedDate.getMonth());
+      newDate.setDate(selectedDate.getDate());
+      setCheckinDate(newDate);
+    }
+  };
+
+  // Mobile: Handle time selection for checkin
+  const onCheckinTimeChange = (_event: any, selectedTime?: Date) => {
+    setShowCheckinTime(false);
+    if (selectedTime && checkinDate) {
+      const newDate = new Date(checkinDate);
+      newDate.setHours(selectedTime.getHours());
+      newDate.setMinutes(selectedTime.getMinutes());
+      setCheckinDate(newDate);
+    }
+  };
+
+  // Mobile: Handle date selection for checkout
+  const onCheckoutDateChange = (_event: any, selectedDate?: Date) => {
+    setShowCheckoutDate(false);
+    if (selectedDate && checkoutDate) {
+      const newDate = new Date(checkoutDate);
+      newDate.setFullYear(selectedDate.getFullYear());
+      newDate.setMonth(selectedDate.getMonth());
+      newDate.setDate(selectedDate.getDate());
+      setCheckoutDate(newDate);
+    }
+  };
+
+  // Mobile: Handle time selection for checkout
+  const onCheckoutTimeChange = (_event: any, selectedTime?: Date) => {
+    setShowCheckoutTime(false);
+    if (selectedTime && checkoutDate) {
+      const newDate = new Date(checkoutDate);
+      newDate.setHours(selectedTime.getHours());
+      newDate.setMinutes(selectedTime.getMinutes());
+      setCheckoutDate(newDate);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
@@ -343,10 +404,7 @@ export default function AddGuest() {
           <View style={styles.bgCircle1} />
           <View style={styles.bgCircle2} />
           <View style={styles.bgCircle3} />
-          <LinearGradient
-            colors={["rgba(37,99,235,0.05)", "transparent"]}
-            style={styles.bgGradient}
-          />
+          <View style={styles.bgGradient} />
         </View>
 
         {/* Header */}
@@ -356,7 +414,6 @@ export default function AddGuest() {
             style={({ pressed }) => [
               styles.backButton,
               pressed && styles.backButtonPressed,
-              Platform.OS === "web" && styles.backButtonHover,
             ]}
           >
             <Ionicons name="arrow-back" size={20} color="#6B7280" />
@@ -374,10 +431,7 @@ export default function AddGuest() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={[
-            styles.card,
-            Platform.OS === "web" && { maxWidth: 680, width: "100%", alignSelf: "center" }
-          ]}>
+          <View style={[styles.card, Platform.OS === "web" && "form-card"]}>
             {/* Card Header */}
             <View style={styles.cardHeader}>
               <View style={styles.iconContainer}>
@@ -398,6 +452,7 @@ export default function AddGuest() {
                 <View style={[
                   styles.inputWrapper,
                   isFocused.name && styles.inputFocused,
+                  Platform.OS === "web" && "date-input-wrapper",
                 ]}>
                   <View style={styles.inputIconContainer}>
                     <Ionicons name="person-outline" size={18} color={isFocused.name ? "#2563EB" : "#9CA3AF"} />
@@ -421,6 +476,7 @@ export default function AddGuest() {
                 <View style={[
                   styles.inputWrapper,
                   isFocused.mobile && styles.inputFocused,
+                  Platform.OS === "web" && "date-input-wrapper",
                 ]}>
                   <View style={styles.inputIconContainer}>
                     <Ionicons name="call-outline" size={18} color={isFocused.mobile ? "#2563EB" : "#9CA3AF"} />
@@ -441,15 +497,18 @@ export default function AddGuest() {
                 </View>
               </View>
 
-              {/* Date Grid - Enhanced Calendar/Time Picker */}
+              {/* Date Grid - FIXED: Separate Date + Time Pickers for Mobile */}
               <View style={styles.dateGrid}>
                 {/* Check-in */}
                 <View style={styles.dateColumn}>
                   <Text style={styles.label}>Check-in Date & Time</Text>
+
                   {Platform.OS === "web" ? (
+                    // ✅ WEB: Native datetime-local input (click calendar icon to open)
                     <View style={[
                       styles.datePicker,
                       isFocused.checkin && styles.datePickerFocused,
+                      Platform.OS === "web" && "date-input-wrapper",
                     ]}>
                       <View style={styles.inputIconContainer}>
                         <Ionicons name="calendar-outline" size={18} color="#2563EB" />
@@ -470,61 +529,131 @@ export default function AddGuest() {
                       />
                     </View>
                   ) : (
-                    <>
+                    // ✅ MOBILE: Separate buttons for Date and Time with Modal pickers
+                    <View style={styles.mobileDateTimeGrid}>
+                      {/* Check-in Date Button */}
                       <Pressable
                         style={[
-                          styles.datePicker,
-                          isFocused.checkin && styles.datePickerFocused,
+                          styles.mobileDateBtn,
+                          isFocused.checkin && styles.mobileDateBtnFocused,
                         ]}
-                        onPress={() => setShowCheckinPicker(true)}
+                        onPress={() => setShowCheckinDate(true)}
                       >
-                        <View style={styles.inputIconContainer}>
-                          <Ionicons name="calendar-outline" size={18} color="#2563EB" />
+                        <View style={styles.mobileDateIcon}>
+                          <Ionicons name="calendar" size={18} color="#2563EB" />
                         </View>
-                        <Text
-                          style={[
-                            styles.dateText,
-                            !checkinDate && styles.datePlaceholder,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {formatDateDisplay(checkinDate)}
-                        </Text>
-                        <View style={styles.datePickerChevron}>
-                          <Ionicons name="chevron-down" size={16} color="#9CA3AF" />
+                        <View style={styles.mobileDateContent}>
+                          <Text style={styles.mobileDateLabel}>Date</Text>
+                          <Text style={styles.mobileDateValue}>
+                            {checkinDate ? formatDisplayDate(checkinDate) : "Select"}
+                          </Text>
                         </View>
                       </Pressable>
-                      {showCheckinPicker && (
-                        <DateTimePicker
-                          value={checkinDate ?? new Date()}
-                          mode="datetime"
-                          display={Platform.OS === "ios" ? "spinner" : "default"}
-                          onChange={(_, date) => {
-                            setShowCheckinPicker(false);
-                            if (date) {
-                              setCheckinDate(date);
-                              // Auto-adjust checkout if it's before new checkin
-                              if (checkoutDate && date >= checkoutDate) {
-                                const newCheckout = new Date(date);
-                                newCheckout.setDate(newCheckout.getDate() + 1);
-                                setCheckoutDate(newCheckout);
-                              }
-                            }
-                          }}
-                          minimumDate={new Date()}
-                        />
-                      )}
-                    </>
+
+                      {/* Check-in Time Button */}
+                      <Pressable
+                        style={[
+                          styles.mobileDateBtn,
+                          isFocused.checkin && styles.mobileDateBtnFocused,
+                        ]}
+                        onPress={() => setShowCheckinTime(true)}
+                      >
+                        <View style={styles.mobileDateIcon}>
+                          <Ionicons name="time" size={18} color="#2563EB" />
+                        </View>
+                        <View style={styles.mobileDateContent}>
+                          <Text style={styles.mobileDateLabel}>Time</Text>
+                          <Text style={styles.mobileDateValue}>
+                            {checkinDate ? formatDisplayTime(checkinDate) : "Select"}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    </View>
+                  )}
+
+                  {/* Mobile: Check-in Date Picker Modal */}
+                  {Platform.OS !== "web" && showCheckinDate && (
+                    <Modal
+                      transparent
+                      visible={showCheckinDate}
+                      animationType="fade"
+                      onRequestClose={() => setShowCheckinDate(false)}
+                    >
+                      <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                          <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Select Check-in Date</Text>
+                            <Pressable onPress={() => setShowCheckinDate(false)} style={styles.modalClose}>
+                              <Ionicons name="close" size={24} color="#6B7280" />
+                            </Pressable>
+                          </View>
+                          <DateTimePicker
+                            value={checkinDate ?? new Date()}
+                            mode="date"
+                            display={Platform.OS === "ios" ? "spinner" : "default"}
+                            onChange={onCheckinDateChange}
+                            minimumDate={new Date()}
+                            accentColor="#2563EB"
+                            textColor="#111827"
+                          />
+                          <Pressable
+                            style={styles.modalConfirmBtn}
+                            onPress={() => setShowCheckinDate(false)}
+                          >
+                            <Text style={styles.modalConfirmText}>Done</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </Modal>
+                  )}
+
+                  {/* Mobile: Check-in Time Picker Modal */}
+                  {Platform.OS !== "web" && showCheckinTime && (
+                    <Modal
+                      transparent
+                      visible={showCheckinTime}
+                      animationType="fade"
+                      onRequestClose={() => setShowCheckinTime(false)}
+                    >
+                      <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                          <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Select Check-in Time</Text>
+                            <Pressable onPress={() => setShowCheckinTime(false)} style={styles.modalClose}>
+                              <Ionicons name="close" size={24} color="#6B7280" />
+                            </Pressable>
+                          </View>
+                          <DateTimePicker
+                            value={checkinDate ?? new Date()}
+                            mode="time"
+                            display={Platform.OS === "ios" ? "spinner" : "default"}
+                            onChange={onCheckinTimeChange}
+                            is24Hour={false}
+                            accentColor="#2563EB"
+                            textColor="#111827"
+                          />
+                          <Pressable
+                            style={styles.modalConfirmBtn}
+                            onPress={() => setShowCheckinTime(false)}
+                          >
+                            <Text style={styles.modalConfirmText}>Done</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </Modal>
                   )}
                 </View>
 
                 {/* Check-out */}
                 <View style={styles.dateColumn}>
                   <Text style={styles.label}>Check-out Date & Time</Text>
+
                   {Platform.OS === "web" ? (
+                    // ✅ WEB: Native datetime-local input
                     <View style={[
                       styles.datePicker,
                       isFocused.checkout && styles.datePickerFocused,
+                      Platform.OS === "web" && "date-input-wrapper",
                     ]}>
                       <View style={styles.inputIconContainer}>
                         <Ionicons name="exit-outline" size={18} color="#2563EB" />
@@ -545,43 +674,119 @@ export default function AddGuest() {
                       />
                     </View>
                   ) : (
-                    <>
+                    // ✅ MOBILE: Separate buttons for Date and Time
+                    <View style={styles.mobileDateTimeGrid}>
+                      {/* Check-out Date Button */}
                       <Pressable
                         style={[
-                          styles.datePicker,
-                          isFocused.checkout && styles.datePickerFocused,
+                          styles.mobileDateBtn,
+                          isFocused.checkout && styles.mobileDateBtnFocused,
                         ]}
-                        onPress={() => setShowCheckoutPicker(true)}
+                        onPress={() => setShowCheckoutDate(true)}
                       >
-                        <View style={styles.inputIconContainer}>
-                          <Ionicons name="exit-outline" size={18} color="#2563EB" />
+                        <View style={styles.mobileDateIcon}>
+                          <Ionicons name="calendar" size={18} color="#2563EB" />
                         </View>
-                        <Text
-                          style={[
-                            styles.dateText,
-                            !checkoutDate && styles.datePlaceholder,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {formatDateDisplay(checkoutDate)}
-                        </Text>
-                        <View style={styles.datePickerChevron}>
-                          <Ionicons name="chevron-down" size={16} color="#9CA3AF" />
+                        <View style={styles.mobileDateContent}>
+                          <Text style={styles.mobileDateLabel}>Date</Text>
+                          <Text style={styles.mobileDateValue}>
+                            {checkoutDate ? formatDisplayDate(checkoutDate) : "Select"}
+                          </Text>
                         </View>
                       </Pressable>
-                      {showCheckoutPicker && (
-                        <DateTimePicker
-                          value={checkoutDate ?? new Date()}
-                          mode="datetime"
-                          display={Platform.OS === "ios" ? "spinner" : "default"}
-                          minimumDate={checkinDate ?? new Date()}
-                          onChange={(_, date) => {
-                            setShowCheckoutPicker(false);
-                            if (date) setCheckoutDate(date);
-                          }}
-                        />
-                      )}
-                    </>
+
+                      {/* Check-out Time Button */}
+                      <Pressable
+                        style={[
+                          styles.mobileDateBtn,
+                          isFocused.checkout && styles.mobileDateBtnFocused,
+                        ]}
+                        onPress={() => setShowCheckoutTime(true)}
+                      >
+                        <View style={styles.mobileDateIcon}>
+                          <Ionicons name="time" size={18} color="#2563EB" />
+                        </View>
+                        <View style={styles.mobileDateContent}>
+                          <Text style={styles.mobileDateLabel}>Time</Text>
+                          <Text style={styles.mobileDateValue}>
+                            {checkoutDate ? formatDisplayTime(checkoutDate) : "Select"}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    </View>
+                  )}
+
+                  {/* Mobile: Check-out Date Picker Modal */}
+                  {Platform.OS !== "web" && showCheckoutDate && (
+                    <Modal
+                      transparent
+                      visible={showCheckoutDate}
+                      animationType="fade"
+                      onRequestClose={() => setShowCheckoutDate(false)}
+                    >
+                      <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                          <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Select Check-out Date</Text>
+                            <Pressable onPress={() => setShowCheckoutDate(false)} style={styles.modalClose}>
+                              <Ionicons name="close" size={24} color="#6B7280" />
+                            </Pressable>
+                          </View>
+                          <DateTimePicker
+                            value={checkoutDate ?? new Date()}
+                            mode="date"
+                            display={Platform.OS === "ios" ? "spinner" : "default"}
+                            onChange={onCheckoutDateChange}
+                            minimumDate={checkinDate ?? new Date()}
+                            accentColor="#2563EB"
+                            textColor="#111827"
+                          />
+                          <Pressable
+                            style={styles.modalConfirmBtn}
+                            onPress={() => setShowCheckoutDate(false)}
+                          >
+                            <Text style={styles.modalConfirmText}>Done</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </Modal>
+                  )}
+
+                  {/* Mobile: Check-out Time Picker Modal */}
+                  {Platform.OS !== "web" && showCheckoutTime && (
+                    <Modal
+                      transparent
+                      visible={showCheckoutTime}
+                      animationType="fade"
+                      onRequestClose={() => setShowCheckoutTime(false)}
+                    >
+                      <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                          <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Select Check-out Time</Text>
+                            <Pressable onPress={() => setShowCheckoutTime(false)} style={styles.modalClose}>
+                              <Ionicons name="close" size={24} color="#6B7280" />
+                            </Pressable>
+                          </View>
+                          <DateTimePicker
+                            value={checkoutDate ?? new Date()}
+                            mode="time"
+                            display={Platform.OS === "ios" ? "spinner" : "default"}
+                            onChange={onCheckoutTimeChange}
+                            minimumDate={checkinDate ?? new Date()}
+                            is24Hour={false}
+                            accentColor="#2563EB"
+                            textColor="#111827"
+                          />
+                          <Pressable
+                            style={styles.modalConfirmBtn}
+                            onPress={() => setShowCheckoutTime(false)}
+                          >
+                            <Text style={styles.modalConfirmText}>Done</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </Modal>
                   )}
                 </View>
               </View>
@@ -600,9 +805,9 @@ export default function AddGuest() {
                         onPress={() => toggleMeal(meal)}
                         style={({ pressed }) => [
                           styles.mealCircle,
+                          Platform.OS === "web" && "meal-option",
                           isSelected && styles.mealCircleSelected,
                           pressed && styles.mealCirclePressed,
-                          Platform.OS === "web" && isSelected && { transform: [{ translateY: -2 }] }
                         ]}
                       >
                         <View style={styles.mealContent}>
@@ -658,6 +863,7 @@ export default function AddGuest() {
                   styles.buttonPrimary,
                   loading && styles.buttonDisabled,
                   pressed && !loading && styles.buttonPressed,
+                  Platform.OS === "web" && "btn-primary",
                 ]}
                 onPress={assignRoom}
                 disabled={loading}
@@ -715,6 +921,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: "40%",
+    backgroundColor: "linear-gradient(180deg, rgba(37,99,235,0.03) 0%, transparent 70%)",
   },
   bgCircle1: {
     position: "absolute",
@@ -771,9 +978,6 @@ const styles = StyleSheet.create({
   backButtonPressed: {
     backgroundColor: "#E5E7EB",
     transform: [{ scale: 0.96 }],
-  },
-  backButtonHover: {
-    // Web hover handled via CSS
   },
   headerContent: {
     flex: 1,
@@ -908,10 +1112,6 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     overflow: "hidden",
     minHeight: 52,
-    ...Platform.select({
-      web: { cursor: "pointer" } as any,
-      default: {},
-    }),
   },
   datePickerFocused: {
     borderColor: "#2563EB",
@@ -922,21 +1122,6 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 3,
   },
-  dateText: {
-    flex: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 14,
-    fontSize: 15,
-    color: "#111827",
-    fontWeight: "500",
-  },
-  datePlaceholder: {
-    color: "#9CA3AF",
-  },
-  datePickerChevron: {
-    padding: 16,
-    paddingRight: 18,
-  },
   webDateInput: {
     flex: 1,
     paddingVertical: 16,
@@ -944,17 +1129,112 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#111827",
     fontWeight: "500",
+    outlineStyle: "none",
     borderWidth: 0,
     backgroundColor: "transparent",
     minHeight: 52,
-    ...Platform.select({
-      web: {
-        outlineStyle: "none",
-        cursor: "pointer",
-      } as any,
-      default: {},
-    }),
+    cursor: "pointer",
   },
+
+  // ✅ NEW: Mobile Date/Time Button Styles
+  mobileDateTimeGrid: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  mobileDateBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+    padding: 12,
+    minHeight: 52,
+  },
+  mobileDateBtnFocused: {
+    borderColor: "#2563EB",
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#2563EB",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  mobileDateIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(37, 99, 235, 0.1)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 10,
+  },
+  mobileDateContent: {
+    flex: 1,
+  },
+  mobileDateLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#6B7280",
+    marginBottom: 2,
+  },
+  mobileDateValue: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#111827",
+  },
+
+  // ✅ NEW: Modal Styles for Mobile Pickers
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  modalContent: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 20,
+    width: "100%",
+    maxWidth: 400,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 30,
+    elevation: 20,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  modalClose: {
+    padding: 4,
+  },
+  modalConfirmBtn: {
+    backgroundColor: "#2563EB",
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 16,
+  },
+  modalConfirmText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
   mealRow: {
     flexDirection: "row",
     justifyContent: "space-between",
