@@ -11,9 +11,11 @@ import {
   Platform,
   ScrollView,
   StatusBar,
+  Modal,
+  useWindowDimensions,
 } from "react-native";
-import { useState, useEffect, useRef } from "react";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import { useState, useEffect } from "react";
+import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import {
   collection,
   query,
@@ -40,6 +42,8 @@ type Meal = "breakfast" | "lunch" | "dinner";
 
 export default function AddGuest() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isWide = width >= 820;
 
   const [guestName, setGuestName] = useState("");
   const [mobile, setMobile] = useState("");
@@ -50,8 +54,13 @@ export default function AddGuest() {
     tomorrow.setHours(11, 0, 0, 0);
     return tomorrow;
   });
+
+  // iOS modal pickers (Android uses DateTimePickerAndroid; Web uses native <input type="datetime-local">)
   const [showCheckinPicker, setShowCheckinPicker] = useState(false);
   const [showCheckoutPicker, setShowCheckoutPicker] = useState(false);
+  const [iosTempCheckin, setIosTempCheckin] = useState<Date>(new Date());
+  const [iosTempCheckout, setIosTempCheckout] = useState<Date>(new Date());
+
   const [loading, setLoading] = useState(false);
   const [assignedRoom, setAssignedRoom] = useState<number | null>(null);
   const [selectedMeals, setSelectedMeals] = useState<Meal[]>([]);
@@ -103,7 +112,7 @@ export default function AddGuest() {
   const webCheckoutValue = checkoutDate ? formatDateTimeLocal(checkoutDate) : "";
   const webMinValue = formatDateTimeLocal(new Date());
 
-  // Inject web-specific styles for datetime input enhancement
+  // Web-only styling for native datetime-local indicator
   useEffect(() => {
     if (Platform.OS === "web") {
       const style = document.createElement("style");
@@ -113,32 +122,12 @@ export default function AddGuest() {
           accent-color: #2563EB;
         }
         input[type="datetime-local"]::-webkit-calendar-picker-indicator {
-          filter: invert(0.5);
           cursor: pointer;
-          opacity: 0.7;
+          opacity: 0.75;
           transition: opacity 0.2s ease;
         }
         input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
           opacity: 1;
-        }
-        .date-input-wrapper:focus-within {
-          border-color: #2563EB !important;
-          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12) !important;
-          background-color: #FFFFFF !important;
-        }
-        .meal-option:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 8px 20px rgba(37, 99, 235, 0.15) !important;
-        }
-        .btn-primary:hover {
-          filter: brightness(1.05);
-          transform: translateY(-1px);
-        }
-        @media (min-width: 768px) {
-          .form-card {
-            max-width: 680px;
-            margin: 0 auto;
-          }
         }
       `;
       document.head.appendChild(style);
@@ -148,20 +137,27 @@ export default function AddGuest() {
     }
   }, []);
 
-  const checkoutPreviousGuest = async (adminUid: string, guestDocId: string, roomNumber: number) => {
+  const checkoutPreviousGuest = async (
+    adminUid: string,
+    guestDocId: string,
+    roomNumber: number
+  ) => {
     try {
       const batch = writeBatch(db);
+
       batch.update(doc(db, "guests", guestDocId), {
         isActive: false,
         isLoggedIn: false,
         checkedOutAt: serverTimestamp(),
-        checkoutReason: "replaced_by_new_booking"
+        checkoutReason: "replaced_by_new_booking",
       });
+
       const roomsQuery = query(
         collection(db, "users", adminUid, "rooms"),
         where("roomNumber", "==", roomNumber),
         where("status", "==", "occupied")
       );
+
       const roomsSnap = await getDocs(roomsQuery);
       roomsSnap.docs.forEach((roomDoc) => {
         batch.update(roomDoc.ref, {
@@ -171,9 +167,10 @@ export default function AddGuest() {
           guestId: null,
           assignedAt: null,
           checkoutAt: null,
-          updatedAt: serverTimestamp()
+          updatedAt: serverTimestamp(),
         });
       });
+
       await batch.commit();
       console.log("Previous guest checked out successfully");
     } catch (error) {
@@ -196,9 +193,12 @@ export default function AddGuest() {
         checkoutAt: Timestamp.fromDate(checkoutDate!),
         mealPlan: selectedMeals,
       };
+
       const guestRef = await addDoc(collection(db, "guests"), guestData);
+
       const q = query(getUserRoomsRef(), where("status", "==", "available"));
       const snapshot = await getDocs(q);
+
       if (snapshot.empty) {
         Alert.alert(
           "No Rooms Available",
@@ -206,13 +206,16 @@ export default function AddGuest() {
         );
         return;
       }
+
       const roomDoc = snapshot.docs[0];
       const roomRef = getUserRoomRef(roomDoc.id);
       const roomNumber = roomDoc.data().roomNumber;
+
       await runTransaction(db, async (transaction) => {
         const roomSnap = await transaction.get(roomRef);
         if (!roomSnap.exists()) throw "Room missing";
         if (roomSnap.data().status !== "available") throw "Room already occupied";
+
         transaction.update(roomRef, {
           status: "occupied",
           guestName: guestName.trim(),
@@ -223,14 +226,18 @@ export default function AddGuest() {
           adminEmail: currentUser.email,
           mealPlan: selectedMeals,
         });
+
         transaction.update(guestRef, {
           roomNumber: roomNumber,
         });
       });
+
       setAssignedRoom(roomNumber);
+
       const qrUrl = `https://roomio-guest.vercel.app/guest?admin=${encodeURIComponent(
         adminUid
       )}`;
+
       Alert.alert(
         "✅ Guest Added Successfully!",
         `Guest: ${guestName}\nMobile: ${mobile}\nRoom: ${roomNumber}\nMeal: ${prettyMealText(
@@ -278,23 +285,29 @@ export default function AddGuest() {
       Alert.alert("Invalid Dates", "Checkout must be after check-in time");
       return;
     }
+
     setLoading(true);
     try {
       const uid = getCurrentUserId();
       const currentUser = auth.currentUser;
+
       if (!currentUser) {
         Alert.alert("Error", "You must be logged in as admin");
         return;
       }
+
       const existingGuestQuery = query(
         collection(db, "guests"),
         where("adminId", "==", uid),
         where("guestMobile", "==", mobile),
         where("isActive", "==", true)
       );
+
       const existingGuestSnap = await getDocs(existingGuestQuery);
+
       if (!existingGuestSnap.empty) {
         const existingGuest = existingGuestSnap.docs[0].data();
+
         Alert.alert(
           "⚠️ Duplicate Booking Found",
           `Guest with mobile ${mobile} already has an active booking in Room ${existingGuest.roomNumber}.\n\nDo you want to check out the previous guest and assign a new room?`,
@@ -304,15 +317,21 @@ export default function AddGuest() {
               text: "Checkout Previous & Continue",
               style: "destructive",
               onPress: async () => {
-                await checkoutPreviousGuest(uid, existingGuestSnap.docs[0].id, existingGuest.roomNumber);
+                await checkoutPreviousGuest(
+                  uid,
+                  existingGuestSnap.docs[0].id,
+                  existingGuest.roomNumber
+                );
                 await createNewBooking(uid, currentUser);
-              }
-            }
+              },
+            },
           ]
         );
+
         setLoading(false);
         return;
       }
+
       await createNewBooking(uid, currentUser);
     } catch (err) {
       console.error("Error adding guest:", err);
@@ -330,6 +349,61 @@ export default function AddGuest() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  // ✅ ANDROID: show Date picker then Time picker (because "datetime" isn't reliable on Android)
+  const openAndroidDateTimePicker = ({
+    initial,
+    minimumDate,
+    onPicked,
+    onDone,
+  }: {
+    initial: Date;
+    minimumDate?: Date;
+    onPicked: (d: Date) => void;
+    onDone?: () => void;
+  }) => {
+    DateTimePickerAndroid.open({
+      value: initial,
+      mode: "date",
+      minimumDate,
+      onChange: (event, date) => {
+        if (event.type !== "set" || !date) {
+          onDone?.();
+          return;
+        }
+
+        const pickedDate = new Date(date);
+
+        DateTimePickerAndroid.open({
+          value: pickedDate,
+          mode: "time",
+          onChange: (event2, time) => {
+            onDone?.();
+            if (event2.type !== "set" || !time) return;
+
+            const finalDate = new Date(pickedDate);
+            finalDate.setHours(time.getHours(), time.getMinutes(), 0, 0);
+            onPicked(finalDate);
+          },
+        });
+      },
+    });
+  };
+
+  // Web native input style (must be plain CSS-like object, not StyleSheet-only props)
+  const webNativeDateInputStyle: any = {
+    flex: 1,
+    minWidth: 0,
+    height: 52,
+    border: "none",
+    outline: "none",
+    background: "transparent",
+    padding: "16px 12px",
+    fontSize: 15,
+    color: "#111827",
+    fontWeight: 500,
+    cursor: "pointer",
   };
 
   return (
@@ -374,10 +448,16 @@ export default function AddGuest() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={[
-            styles.card,
-            Platform.OS === "web" && { maxWidth: 680, width: "100%", alignSelf: "center" }
-          ]}>
+          <View
+            style={[
+              styles.card,
+              Platform.OS === "web" && {
+                maxWidth: 680,
+                width: "100%",
+                alignSelf: "center",
+              },
+            ]}
+          >
             {/* Card Header */}
             <View style={styles.cardHeader}>
               <View style={styles.iconContainer}>
@@ -395,12 +475,18 @@ export default function AddGuest() {
               {/* Guest Name */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Guest Name</Text>
-                <View style={[
-                  styles.inputWrapper,
-                  isFocused.name && styles.inputFocused,
-                ]}>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    isFocused.name && styles.inputFocused,
+                  ]}
+                >
                   <View style={styles.inputIconContainer}>
-                    <Ionicons name="person-outline" size={18} color={isFocused.name ? "#2563EB" : "#9CA3AF"} />
+                    <Ionicons
+                      name="person-outline"
+                      size={18}
+                      color={isFocused.name ? "#2563EB" : "#9CA3AF"}
+                    />
                   </View>
                   <TextInput
                     placeholder="Enter guest name"
@@ -408,8 +494,12 @@ export default function AddGuest() {
                     style={styles.input}
                     value={guestName}
                     onChangeText={setGuestName}
-                    onFocus={() => setIsFocused(prev => ({ ...prev, name: true }))}
-                    onBlur={() => setIsFocused(prev => ({ ...prev, name: false }))}
+                    onFocus={() =>
+                      setIsFocused((prev) => ({ ...prev, name: true }))
+                    }
+                    onBlur={() =>
+                      setIsFocused((prev) => ({ ...prev, name: false }))
+                    }
                     autoCapitalize="words"
                   />
                 </View>
@@ -418,12 +508,18 @@ export default function AddGuest() {
               {/* Mobile Number */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Mobile Number</Text>
-                <View style={[
-                  styles.inputWrapper,
-                  isFocused.mobile && styles.inputFocused,
-                ]}>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    isFocused.mobile && styles.inputFocused,
+                  ]}
+                >
                   <View style={styles.inputIconContainer}>
-                    <Ionicons name="call-outline" size={18} color={isFocused.mobile ? "#2563EB" : "#9CA3AF"} />
+                    <Ionicons
+                      name="call-outline"
+                      size={18}
+                      color={isFocused.mobile ? "#2563EB" : "#9CA3AF"}
+                    />
                   </View>
                   <TextInput
                     placeholder="10-digit mobile number"
@@ -435,153 +531,210 @@ export default function AddGuest() {
                     onChangeText={(text) => {
                       if (/^\d*$/.test(text)) setMobile(text);
                     }}
-                    onFocus={() => setIsFocused(prev => ({ ...prev, mobile: true }))}
-                    onBlur={() => setIsFocused(prev => ({ ...prev, mobile: false }))}
+                    onFocus={() =>
+                      setIsFocused((prev) => ({ ...prev, mobile: true }))
+                    }
+                    onBlur={() =>
+                      setIsFocused((prev) => ({ ...prev, mobile: false }))
+                    }
                   />
                 </View>
               </View>
 
-              {/* Date Grid - Enhanced Calendar/Time Picker */}
-              <View style={styles.dateGrid}>
+              {/* Date Grid */}
+              <View style={[styles.dateGrid, { flexDirection: isWide ? "row" : "column" }]}>
                 {/* Check-in */}
                 <View style={styles.dateColumn}>
                   <Text style={styles.label}>Check-in Date & Time</Text>
+
                   {Platform.OS === "web" ? (
-                    <View style={[
-                      styles.datePicker,
-                      isFocused.checkin && styles.datePickerFocused,
-                    ]}>
+                    <View
+                      style={[
+                        styles.datePicker,
+                        isFocused.checkin && styles.datePickerFocused,
+                      ]}
+                    >
                       <View style={styles.inputIconContainer}>
-                        <Ionicons name="calendar-outline" size={18} color="#2563EB" />
+                        <Ionicons
+                          name="calendar-outline"
+                          size={18}
+                          color="#2563EB"
+                        />
                       </View>
-                      <TextInput
-                        style={styles.webDateInput}
-                        value={webCheckinValue}
-                        onChangeText={(val) => {
-                          if (!val) return;
-                          const d = parseDateTimeLocal(val);
-                          if (d) setCheckinDate(d);
-                        }}
-                        onFocus={() => setIsFocused(prev => ({ ...prev, checkin: true }))}
-                        onBlur={() => setIsFocused(prev => ({ ...prev, checkin: false }))}
-                        // @ts-ignore - native HTML5 datetime-local input
+
+                      {/* Native web input (this is what actually opens calendar/time popup) */}
+                      <input
                         type="datetime-local"
+                        value={webCheckinValue}
                         min={webMinValue}
+                        step={60}
+                        onChange={(e) => {
+                          const d = parseDateTimeLocal(e.target.value);
+                          if (d) {
+                            setCheckinDate(d);
+                            if (checkoutDate && d >= checkoutDate) {
+                              const newCheckout = new Date(d);
+                              newCheckout.setDate(newCheckout.getDate() + 1);
+                              setCheckoutDate(newCheckout);
+                            }
+                          }
+                        }}
+                        onFocus={() =>
+                          setIsFocused((prev) => ({ ...prev, checkin: true }))
+                        }
+                        onBlur={() =>
+                          setIsFocused((prev) => ({ ...prev, checkin: false }))
+                        }
+                        style={webNativeDateInputStyle}
                       />
                     </View>
                   ) : (
-                    <>
-                      <Pressable
-                        style={[
-                          styles.datePicker,
-                          isFocused.checkin && styles.datePickerFocused,
-                        ]}
-                        onPress={() => setShowCheckinPicker(true)}
-                      >
-                        <View style={styles.inputIconContainer}>
-                          <Ionicons name="calendar-outline" size={18} color="#2563EB" />
-                        </View>
-                        <Text
-                          style={[
-                            styles.dateText,
-                            !checkinDate && styles.datePlaceholder,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {formatDateDisplay(checkinDate)}
-                        </Text>
-                        <View style={styles.datePickerChevron}>
-                          <Ionicons name="chevron-down" size={16} color="#9CA3AF" />
-                        </View>
-                      </Pressable>
-                      {showCheckinPicker && (
-                        <DateTimePicker
-                          value={checkinDate ?? new Date()}
-                          mode="datetime"
-                          display={Platform.OS === "ios" ? "spinner" : "default"}
-                          onChange={(_, date) => {
-                            setShowCheckinPicker(false);
-                            if (date) {
-                              setCheckinDate(date);
-                              // Auto-adjust checkout if it's before new checkin
-                              if (checkoutDate && date >= checkoutDate) {
-                                const newCheckout = new Date(date);
+                    <Pressable
+                      style={[
+                        styles.datePicker,
+                        isFocused.checkin && styles.datePickerFocused,
+                      ]}
+                      onPress={() => {
+                        setIsFocused((prev) => ({ ...prev, checkin: true }));
+
+                        if (Platform.OS === "android") {
+                          openAndroidDateTimePicker({
+                            initial: checkinDate ?? new Date(),
+                            minimumDate: new Date(),
+                            onPicked: (d) => {
+                              setIsFocused((prev) => ({ ...prev, checkin: false }));
+                              setCheckinDate(d);
+                              if (checkoutDate && d >= checkoutDate) {
+                                const newCheckout = new Date(d);
                                 newCheckout.setDate(newCheckout.getDate() + 1);
                                 setCheckoutDate(newCheckout);
                               }
-                            }
-                          }}
-                          minimumDate={new Date()}
+                            },
+                            onDone: () => {
+                              setIsFocused((prev) => ({ ...prev, checkin: false }));
+                            },
+                          });
+                          return;
+                        }
+
+                        // iOS: open modal picker
+                        setIosTempCheckin(checkinDate ?? new Date());
+                        setShowCheckinPicker(true);
+                      }}
+                    >
+                      <View style={styles.inputIconContainer}>
+                        <Ionicons
+                          name="calendar-outline"
+                          size={18}
+                          color="#2563EB"
                         />
-                      )}
-                    </>
+                      </View>
+
+                      <Text
+                        style={[
+                          styles.dateText,
+                          !checkinDate && styles.datePlaceholder,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {formatDateDisplay(checkinDate)}
+                      </Text>
+
+                      <View style={styles.datePickerChevron}>
+                        <Ionicons
+                          name="chevron-down"
+                          size={16}
+                          color="#9CA3AF"
+                        />
+                      </View>
+                    </Pressable>
                   )}
                 </View>
 
                 {/* Check-out */}
                 <View style={styles.dateColumn}>
                   <Text style={styles.label}>Check-out Date & Time</Text>
+
                   {Platform.OS === "web" ? (
-                    <View style={[
-                      styles.datePicker,
-                      isFocused.checkout && styles.datePickerFocused,
-                    ]}>
+                    <View
+                      style={[
+                        styles.datePicker,
+                        isFocused.checkout && styles.datePickerFocused,
+                      ]}
+                    >
                       <View style={styles.inputIconContainer}>
                         <Ionicons name="exit-outline" size={18} color="#2563EB" />
                       </View>
-                      <TextInput
-                        style={styles.webDateInput}
+
+                      <input
+                        type="datetime-local"
                         value={webCheckoutValue}
-                        onChangeText={(val) => {
-                          if (!val) return;
-                          const d = parseDateTimeLocal(val);
+                        min={webCheckinValue || webMinValue}
+                        step={60}
+                        onChange={(e) => {
+                          const d = parseDateTimeLocal(e.target.value);
                           if (d) setCheckoutDate(d);
                         }}
-                        onFocus={() => setIsFocused(prev => ({ ...prev, checkout: true }))}
-                        onBlur={() => setIsFocused(prev => ({ ...prev, checkout: false }))}
-                        // @ts-ignore
-                        type="datetime-local"
-                        min={webCheckinValue || webMinValue}
+                        onFocus={() =>
+                          setIsFocused((prev) => ({ ...prev, checkout: true }))
+                        }
+                        onBlur={() =>
+                          setIsFocused((prev) => ({ ...prev, checkout: false }))
+                        }
+                        style={webNativeDateInputStyle}
                       />
                     </View>
                   ) : (
-                    <>
-                      <Pressable
+                    <Pressable
+                      style={[
+                        styles.datePicker,
+                        isFocused.checkout && styles.datePickerFocused,
+                      ]}
+                      onPress={() => {
+                        setIsFocused((prev) => ({ ...prev, checkout: true }));
+
+                        if (Platform.OS === "android") {
+                          openAndroidDateTimePicker({
+                            initial: checkoutDate ?? new Date(),
+                            minimumDate: checkinDate ?? new Date(),
+                            onPicked: (d) => {
+                              setIsFocused((prev) => ({ ...prev, checkout: false }));
+                              setCheckoutDate(d);
+                            },
+                            onDone: () => {
+                              setIsFocused((prev) => ({ ...prev, checkout: false }));
+                            },
+                          });
+                          return;
+                        }
+
+                        // iOS: open modal picker
+                        setIosTempCheckout(checkoutDate ?? new Date());
+                        setShowCheckoutPicker(true);
+                      }}
+                    >
+                      <View style={styles.inputIconContainer}>
+                        <Ionicons name="exit-outline" size={18} color="#2563EB" />
+                      </View>
+
+                      <Text
                         style={[
-                          styles.datePicker,
-                          isFocused.checkout && styles.datePickerFocused,
+                          styles.dateText,
+                          !checkoutDate && styles.datePlaceholder,
                         ]}
-                        onPress={() => setShowCheckoutPicker(true)}
+                        numberOfLines={1}
                       >
-                        <View style={styles.inputIconContainer}>
-                          <Ionicons name="exit-outline" size={18} color="#2563EB" />
-                        </View>
-                        <Text
-                          style={[
-                            styles.dateText,
-                            !checkoutDate && styles.datePlaceholder,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {formatDateDisplay(checkoutDate)}
-                        </Text>
-                        <View style={styles.datePickerChevron}>
-                          <Ionicons name="chevron-down" size={16} color="#9CA3AF" />
-                        </View>
-                      </Pressable>
-                      {showCheckoutPicker && (
-                        <DateTimePicker
-                          value={checkoutDate ?? new Date()}
-                          mode="datetime"
-                          display={Platform.OS === "ios" ? "spinner" : "default"}
-                          minimumDate={checkinDate ?? new Date()}
-                          onChange={(_, date) => {
-                            setShowCheckoutPicker(false);
-                            if (date) setCheckoutDate(date);
-                          }}
+                        {formatDateDisplay(checkoutDate)}
+                      </Text>
+
+                      <View style={styles.datePickerChevron}>
+                        <Ionicons
+                          name="chevron-down"
+                          size={16}
+                          color="#9CA3AF"
                         />
-                      )}
-                    </>
+                      </View>
+                    </Pressable>
                   )}
                 </View>
               </View>
@@ -592,8 +745,14 @@ export default function AddGuest() {
                 <View style={styles.mealRow}>
                   {(["breakfast", "lunch", "dinner"] as Meal[]).map((meal) => {
                     const isSelected = selectedMeals.includes(meal);
-                    const emoji = meal === "breakfast" ? "🍳" : meal === "lunch" ? "🍱" : "🍽️";
+                    const emoji =
+                      meal === "breakfast"
+                        ? "🍳"
+                        : meal === "lunch"
+                          ? "🍱"
+                          : "🍽️";
                     const label = meal.charAt(0).toUpperCase() + meal.slice(1);
+
                     return (
                       <Pressable
                         key={meal}
@@ -602,18 +761,22 @@ export default function AddGuest() {
                           styles.mealCircle,
                           isSelected && styles.mealCircleSelected,
                           pressed && styles.mealCirclePressed,
-                          Platform.OS === "web" && isSelected && { transform: [{ translateY: -2 }] }
+                          Platform.OS === "web" &&
+                          isSelected && { transform: [{ translateY: -2 }] },
                         ]}
                       >
                         <View style={styles.mealContent}>
                           <Text style={styles.mealEmoji}>{emoji}</Text>
-                          <Text style={[
-                            styles.mealLabel,
-                            isSelected && styles.mealLabelSelected,
-                          ]}>
+                          <Text
+                            style={[
+                              styles.mealLabel,
+                              isSelected && styles.mealLabelSelected,
+                            ]}
+                          >
                             {label}
                           </Text>
                         </View>
+
                         {isSelected && (
                           <View style={styles.mealCheckmark}>
                             <Ionicons name="checkmark" size={12} color="#fff" />
@@ -642,11 +805,17 @@ export default function AddGuest() {
               {assignedRoom && (
                 <View style={styles.successContainer}>
                   <View style={styles.successIcon}>
-                    <Ionicons name="checkmark-circle" size={18} color="#16A34A" />
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={18}
+                      color="#16A34A"
+                    />
                   </View>
                   <View style={styles.successContent}>
                     <Text style={styles.successTitle}>Room Assigned!</Text>
-                    <Text style={styles.successSubtitle}>Room {assignedRoom} is now occupied</Text>
+                    <Text style={styles.successSubtitle}>
+                      Room {assignedRoom} is now occupied
+                    </Text>
                   </View>
                 </View>
               )}
@@ -670,7 +839,9 @@ export default function AddGuest() {
                 ) : (
                   <View style={styles.buttonContent}>
                     <Ionicons name="person-add" size={18} color="#fff" />
-                    <Text style={styles.buttonText}>Add Guest & Assign Room</Text>
+                    <Text style={styles.buttonText}>
+                      Add Guest & Assign Room
+                    </Text>
                     <Ionicons name="arrow-forward" size={18} color="#fff" />
                   </View>
                 )}
@@ -685,12 +856,133 @@ export default function AddGuest() {
             Each admin's guests & rooms stay fully isolated
           </Text>
         </View>
+
+        {/* ✅ iOS CHECK-IN Modal (Calendar + Time Spinner) */}
+        {Platform.OS === "ios" && (
+          <Modal
+            visible={showCheckinPicker}
+            transparent
+            animationType="slide"
+            onRequestClose={() => {
+              setShowCheckinPicker(false);
+              setIsFocused((prev) => ({ ...prev, checkin: false }));
+            }}
+          >
+            <Pressable
+              style={styles.modalBackdrop}
+              onPress={() => {
+                setShowCheckinPicker(false);
+                setIsFocused((prev) => ({ ...prev, checkin: false }));
+              }}
+            />
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHeader}>
+                <Pressable
+                  onPress={() => {
+                    setShowCheckinPicker(false);
+                    setIsFocused((prev) => ({ ...prev, checkin: false }));
+                  }}
+                >
+                  <Text style={styles.modalAction}>Cancel</Text>
+                </Pressable>
+
+                <Text style={styles.modalTitle}>Select Check-in</Text>
+
+                <Pressable
+                  onPress={() => {
+                    setShowCheckinPicker(false);
+                    setIsFocused((prev) => ({ ...prev, checkin: false }));
+
+                    setCheckinDate(iosTempCheckin);
+
+                    if (checkoutDate && iosTempCheckin >= checkoutDate) {
+                      const newCheckout = new Date(iosTempCheckin);
+                      newCheckout.setDate(newCheckout.getDate() + 1);
+                      setCheckoutDate(newCheckout);
+                    }
+                  }}
+                >
+                  <Text style={[styles.modalAction, styles.modalActionPrimary]}>
+                    Done
+                  </Text>
+                </Pressable>
+              </View>
+
+              <DateTimePicker
+                value={iosTempCheckin}
+                mode="datetime"
+                display="spinner"
+                minimumDate={new Date()}
+                onChange={(_, date) => {
+                  if (date) setIosTempCheckin(date);
+                }}
+              />
+            </View>
+          </Modal>
+        )}
+
+        {/* ✅ iOS CHECK-OUT Modal (Calendar + Time Spinner) */}
+        {Platform.OS === "ios" && (
+          <Modal
+            visible={showCheckoutPicker}
+            transparent
+            animationType="slide"
+            onRequestClose={() => {
+              setShowCheckoutPicker(false);
+              setIsFocused((prev) => ({ ...prev, checkout: false }));
+            }}
+          >
+            <Pressable
+              style={styles.modalBackdrop}
+              onPress={() => {
+                setShowCheckoutPicker(false);
+                setIsFocused((prev) => ({ ...prev, checkout: false }));
+              }}
+            />
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHeader}>
+                <Pressable
+                  onPress={() => {
+                    setShowCheckoutPicker(false);
+                    setIsFocused((prev) => ({ ...prev, checkout: false }));
+                  }}
+                >
+                  <Text style={styles.modalAction}>Cancel</Text>
+                </Pressable>
+
+                <Text style={styles.modalTitle}>Select Check-out</Text>
+
+                <Pressable
+                  onPress={() => {
+                    setShowCheckoutPicker(false);
+                    setIsFocused((prev) => ({ ...prev, checkout: false }));
+                    setCheckoutDate(iosTempCheckout);
+                  }}
+                >
+                  <Text style={[styles.modalAction, styles.modalActionPrimary]}>
+                    Done
+                  </Text>
+                </Pressable>
+              </View>
+
+              <DateTimePicker
+                value={iosTempCheckout}
+                mode="datetime"
+                display="spinner"
+                minimumDate={checkinDate ?? new Date()}
+                onChange={(_, date) => {
+                  if (date) setIosTempCheckout(date);
+                }}
+              />
+            </View>
+          </Modal>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-// ✨ Enhanced Styles - Optimized for all platforms
+// ✨ Styles
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
@@ -750,6 +1042,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: 24,
   },
+
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -772,9 +1065,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5E7EB",
     transform: [{ scale: 0.96 }],
   },
-  backButtonHover: {
-    // Web hover handled via CSS
-  },
+  backButtonHover: {},
   headerContent: {
     flex: 1,
     alignItems: "center",
@@ -796,6 +1087,7 @@ const styles = StyleSheet.create({
     color: "#111827",
     letterSpacing: -0.3,
   },
+
   card: {
     backgroundColor: "#FFF",
     borderRadius: 24,
@@ -843,6 +1135,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     lineHeight: 20,
   },
+
   formSection: {
     gap: 20,
   },
@@ -891,8 +1184,8 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontWeight: "500",
   },
+
   dateGrid: {
-    flexDirection: Platform.OS === "web" ? "row" : "column",
     gap: 14,
   },
   dateColumn: {
@@ -908,10 +1201,6 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     overflow: "hidden",
     minHeight: 52,
-    ...Platform.select({
-      web: { cursor: "pointer" } as any,
-      default: {},
-    }),
   },
   datePickerFocused: {
     borderColor: "#2563EB",
@@ -937,24 +1226,7 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingRight: 18,
   },
-  webDateInput: {
-    flex: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    fontSize: 15,
-    color: "#111827",
-    fontWeight: "500",
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    minHeight: 52,
-    ...Platform.select({
-      web: {
-        outlineStyle: "none",
-        cursor: "pointer",
-      } as any,
-      default: {},
-    }),
-  },
+
   mealRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1020,6 +1292,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   qrInfo: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1053,6 +1326,7 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     lineHeight: 18,
   },
+
   successContainer: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1086,6 +1360,7 @@ const styles = StyleSheet.create({
     color: "#16A34A",
     lineHeight: 18,
   },
+
   button: {
     height: 56,
     borderRadius: 16,
@@ -1127,6 +1402,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.2,
   },
+
   footer: {
     paddingHorizontal: 16,
     paddingVertical: 24,
@@ -1141,5 +1417,40 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 18,
     fontWeight: "500",
+  },
+
+  // iOS Modal Picker UI
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(17, 24, 39, 0.35)",
+  },
+  modalSheet: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingBottom: 24,
+    paddingTop: 12,
+  },
+  modalHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.06)",
+  },
+  modalTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  modalAction: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#6B7280",
+  },
+  modalActionPrimary: {
+    color: "#2563EB",
   },
 });
