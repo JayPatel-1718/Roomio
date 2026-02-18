@@ -426,10 +426,18 @@ export default function AddGuest() {
         {/* Header */}
         <View style={styles.header}>
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/(tabs)/rooms");
+              }
+            }}
+            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
             style={({ pressed }) => [
               styles.backButton,
               pressed && styles.backButtonPressed,
+              Platform.OS === "web" && { cursor: "pointer" as any },
               Platform.OS === "web" && styles.backButtonHover,
             ]}
           >
