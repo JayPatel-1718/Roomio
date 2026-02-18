@@ -9,6 +9,7 @@ import {
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from "react-native";
 import { useState } from "react";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -40,13 +41,15 @@ export default function AddGuest() {
 
   const [guestName, setGuestName] = useState("");
   const [mobile, setMobile] = useState("");
+  const [checkinDate, setCheckinDate] = useState<Date | null>(new Date());
   const [checkoutDate, setCheckoutDate] = useState<Date | null>(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(11, 0, 0, 0); // Default to 11 AM tomorrow
     return tomorrow;
   });
-  const [showPicker, setShowPicker] = useState(false);
+  const [showCheckinPicker, setShowCheckinPicker] = useState(false);
+  const [showCheckoutPicker, setShowCheckoutPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [assignedRoom, setAssignedRoom] = useState<number | null>(null);
 
@@ -92,7 +95,8 @@ export default function AddGuest() {
     }
   };
 
-  const webDateValue = checkoutDate ? formatDateTimeLocal(checkoutDate) : "";
+  const webCheckinValue = checkinDate ? formatDateTimeLocal(checkinDate) : "";
+  const webCheckoutValue = checkoutDate ? formatDateTimeLocal(checkoutDate) : "";
   const webMinValue = formatDateTimeLocal(new Date());
 
   const checkoutPreviousGuest = async (adminUid: string, guestDocId: string, roomNumber: number) => {
@@ -143,6 +147,7 @@ export default function AddGuest() {
         isActive: true,
         isLoggedIn: false,
         createdAt: serverTimestamp(),
+        checkinAt: Timestamp.fromDate(checkinDate!),
         checkoutAt: Timestamp.fromDate(checkoutDate!),
         mealPlan: selectedMeals,
       };
@@ -173,7 +178,7 @@ export default function AddGuest() {
           status: "occupied",
           guestName: guestName.trim(),
           guestMobile: mobile,
-          assignedAt: serverTimestamp(),
+          assignedAt: Timestamp.fromDate(checkinDate!),
           checkoutAt: Timestamp.fromDate(checkoutDate!),
           guestId: guestRef.id,
           adminEmail: currentUser.email,
@@ -206,6 +211,7 @@ export default function AddGuest() {
             onPress: () => {
               setGuestName("");
               setMobile("");
+              setCheckinDate(new Date());
               setCheckoutDate(null);
               setSelectedMeals([]);
               setAssignedRoom(null);
@@ -231,13 +237,13 @@ export default function AddGuest() {
       return;
     }
 
-    if (!checkoutDate) {
-      Alert.alert("Invalid Checkout", "Please select checkout date & time");
+    if (!checkinDate || !checkoutDate) {
+      Alert.alert("Invalid Dates", "Please select both check-in and check-out dates");
       return;
     }
 
-    if (checkoutDate <= new Date()) {
-      Alert.alert("Invalid Checkout", "Checkout must be in the future");
+    if (checkoutDate <= checkinDate) {
+      Alert.alert("Invalid Dates", "Checkout must be after check-in time");
       return;
     }
 
@@ -316,234 +322,257 @@ export default function AddGuest() {
           <View style={styles.headerSpacer} />
         </View>
 
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={styles.iconContainer}>
-              <Ionicons name="person-add" size={24} color="#fff" />
-            </View>
-            <View>
-              <Text style={styles.cardTitle}>Check-in Guest</Text>
-              <Text style={styles.cardSubtitle}>
-                Register guest and assign available room
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.formSection}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Guest Name</Text>
-              <View style={styles.inputWrapper}>
-                <View style={styles.inputIconContainer}>
-                  <Ionicons name="person-outline" size={18} color="#2563EB" />
-                </View>
-                <TextInput
-                  placeholder="Enter guest name"
-                  placeholderTextColor="#9CA3AF"
-                  style={styles.input}
-                  value={guestName}
-                  onChangeText={setGuestName}
-                />
+        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={styles.iconContainer}>
+                <Ionicons name="person-add" size={24} color="#fff" />
               </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Mobile Number</Text>
-              <View style={styles.inputWrapper}>
-                <View style={styles.inputIconContainer}>
-                  <Ionicons name="call-outline" size={18} color="#2563EB" />
-                </View>
-                <TextInput
-                  placeholder="10-digit mobile number"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  style={styles.input}
-                  value={mobile}
-                  onChangeText={(text) => {
-                    if (/^\d*$/.test(text)) setMobile(text);
-                  }}
-                />
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <View style={styles.labelRow}>
-                <Text style={styles.label}>Checkout Date & Time</Text>
-                {Platform.OS === "web" && (
-                  <Pressable
-                    onPress={() => {
-                      const nextDay = new Date();
-                      nextDay.setDate(nextDay.getDate() + 1);
-                      nextDay.setHours(11, 0, 0, 0);
-                      setCheckoutDate(nextDay);
-                    }}
-                    style={styles.shortcutBtn}
-                  >
-                    <Text style={styles.shortcutText}>Set Tomorrow 11AM</Text>
-                  </Pressable>
-                )}
-              </View>
-
-              {Platform.OS === "web" ? (
-                <View style={[styles.datePicker, { cursor: "pointer" } as any]}>
-                  <View style={styles.inputIconContainer}>
-                    <Ionicons name="calendar-outline" size={18} color="#2563EB" />
-                  </View>
-
-                  <TextInput
-                    style={styles.webDateInput}
-                    value={webDateValue}
-                    onChangeText={(val) => {
-                      if (!val) {
-                        setCheckoutDate(null);
-                        return;
-                      }
-                      const d = parseDateTimeLocal(val);
-                      if (d) setCheckoutDate(d);
-                    }}
-                    // @ts-ignore
-                    type="datetime-local"
-                    min={webMinValue}
-                  />
-
-                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" style={{ marginRight: 10 }} />
-                </View>
-              ) : (
-                <>
-                  <Pressable style={styles.datePicker} onPress={() => setShowPicker(true)}>
-                    <View style={styles.inputIconContainer}>
-                      <Ionicons name="calendar-outline" size={18} color="#2563EB" />
-                    </View>
-                    <Text style={styles.dateText}>
-                      {checkoutDate
-                        ? checkoutDate.toLocaleString()
-                        : "Select checkout date & time"}
-                    </Text>
-                    <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-                  </Pressable>
-
-                  {showPicker && (
-                    <DateTimePicker
-                      value={checkoutDate ?? new Date()}
-                      mode="datetime"
-                      minimumDate={new Date()}
-                      onChange={(_, date) => {
-                        setShowPicker(false);
-                        if (date) setCheckoutDate(date);
-                      }}
-                    />
-                  )}
-                </>
-              )}
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Meal</Text>
-
-              <View style={styles.mealRow}>
-                <Pressable
-                  onPress={() => toggleMeal("breakfast")}
-                  style={({ pressed }) => [
-                    styles.mealCircle,
-                    selectedMeals.includes("breakfast") && styles.mealCircleSelected,
-                    pressed && styles.mealCirclePressed,
-                  ]}
-                >
-                  <Text style={styles.mealEmoji}>🍳</Text>
-                  <Text
-                    style={[
-                      styles.mealLabel,
-                      selectedMeals.includes("breakfast") && styles.mealLabelSelected,
-                    ]}
-                  >
-                    Breakfast
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => toggleMeal("lunch")}
-                  style={({ pressed }) => [
-                    styles.mealCircle,
-                    selectedMeals.includes("lunch") && styles.mealCircleSelected,
-                    pressed && styles.mealCirclePressed,
-                  ]}
-                >
-                  <Text style={styles.mealEmoji}>🍱</Text>
-                  <Text
-                    style={[
-                      styles.mealLabel,
-                      selectedMeals.includes("lunch") && styles.mealLabelSelected,
-                    ]}
-                  >
-                    Lunch
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => toggleMeal("dinner")}
-                  style={({ pressed }) => [
-                    styles.mealCircle,
-                    selectedMeals.includes("dinner") && styles.mealCircleSelected,
-                    pressed && styles.mealCirclePressed,
-                  ]}
-                >
-                  <Text style={styles.mealEmoji}>🍽️</Text>
-                  <Text
-                    style={[
-                      styles.mealLabel,
-                      selectedMeals.includes("dinner") && styles.mealLabelSelected,
-                    ]}
-                  >
-                    Dinner
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-
-            <View style={styles.qrInfo}>
-              <Ionicons name="qr-code" size={20} color="#2563EB" />
-              <View style={styles.qrContent}>
-                <Text style={styles.qrTitle}>QR Access Generated</Text>
-                <Text style={styles.qrSubtitle}>
-                  Guest can scan QR to access web services
+              <View>
+                <Text style={styles.cardTitle}>Check-in Guest</Text>
+                <Text style={styles.cardSubtitle}>
+                  Register guest and assign available room
                 </Text>
               </View>
             </View>
 
-            {assignedRoom && (
-              <View style={styles.successContainer}>
-                <Ionicons name="checkmark-circle" size={20} color="#16A34A" />
-                <View style={styles.successContent}>
-                  <Text style={styles.successTitle}>Room Assigned!</Text>
-                  <Text style={styles.successSubtitle}>Room {assignedRoom} is now occupied</Text>
+            <View style={styles.formSection}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Guest Name</Text>
+                <View style={styles.inputWrapper}>
+                  <View style={styles.inputIconContainer}>
+                    <Ionicons name="person-outline" size={18} color="#2563EB" />
+                  </View>
+                  <TextInput
+                    placeholder="Enter guest name"
+                    placeholderTextColor="#9CA3AF"
+                    style={styles.input}
+                    value={guestName}
+                    onChangeText={setGuestName}
+                  />
                 </View>
               </View>
-            )}
 
-            <Pressable
-              style={({ pressed }) => [
-                styles.button,
-                loading && styles.buttonDisabled,
-                pressed && !loading && styles.buttonPressed,
-              ]}
-              onPress={assignRoom}
-              disabled={loading}
-            >
-              {loading ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator color="#fff" size="small" />
-                  <Text style={styles.buttonText}>Adding Guest...</Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Mobile Number</Text>
+                <View style={styles.inputWrapper}>
+                  <View style={styles.inputIconContainer}>
+                    <Ionicons name="call-outline" size={18} color="#2563EB" />
+                  </View>
+                  <TextInput
+                    placeholder="10-digit mobile number"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    maxLength={10}
+                    style={styles.input}
+                    value={mobile}
+                    onChangeText={(text) => {
+                      if (/^\d*$/.test(text)) setMobile(text);
+                    }}
+                  />
                 </View>
-              ) : (
-                <View style={styles.buttonContent}>
-                  <Ionicons name="person-add" size={18} color="#fff" />
-                  <Text style={styles.buttonText}>Add Guest & Assign Room</Text>
-                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+              </View>
+
+              <View style={styles.dateGrid}>
+                {/* Check-in Section */}
+                <View style={styles.dateColumn}>
+                  <Text style={styles.label}>Check-in Date & Time</Text>
+                  {Platform.OS === "web" ? (
+                    <View style={styles.datePicker}>
+                      <View style={styles.inputIconContainer}>
+                        <Ionicons name="calendar-outline" size={18} color="#2563EB" />
+                      </View>
+                      <TextInput
+                        style={styles.webDateInput}
+                        value={webCheckinValue}
+                        onChangeText={(val) => {
+                          if (!val) return;
+                          const d = parseDateTimeLocal(val);
+                          if (d) setCheckinDate(d);
+                        }}
+                        // @ts-ignore
+                        type="datetime-local"
+                      />
+                    </View>
+                  ) : (
+                    <>
+                      <Pressable style={styles.datePicker} onPress={() => setShowCheckinPicker(true)}>
+                        <View style={styles.inputIconContainer}>
+                          <Ionicons name="calendar-outline" size={18} color="#2563EB" />
+                        </View>
+                        <Text style={styles.dateText} numberOfLines={1}>
+                          {checkinDate ? checkinDate.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : "Select"}
+                        </Text>
+                      </Pressable>
+                      {showCheckinPicker && (
+                        <DateTimePicker
+                          value={checkinDate ?? new Date()}
+                          mode="datetime"
+                          onChange={(_, date) => {
+                            setShowCheckinPicker(false);
+                            if (date) setCheckinDate(date);
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+                </View>
+
+                {/* Check-out Section */}
+                <View style={styles.dateColumn}>
+                  <Text style={styles.label}>Check-out Date & Time</Text>
+                  {Platform.OS === "web" ? (
+                    <View style={styles.datePicker}>
+                      <View style={styles.inputIconContainer}>
+                        <Ionicons name="exit-outline" size={18} color="#2563EB" />
+                      </View>
+                      <TextInput
+                        style={styles.webDateInput}
+                        value={webCheckoutValue}
+                        onChangeText={(val) => {
+                          if (!val) return;
+                          const d = parseDateTimeLocal(val);
+                          if (d) setCheckoutDate(d);
+                        }}
+                        // @ts-ignore
+                        type="datetime-local"
+                        min={webCheckinValue}
+                      />
+                    </View>
+                  ) : (
+                    <>
+                      <Pressable style={styles.datePicker} onPress={() => setShowCheckoutPicker(true)}>
+                        <View style={styles.inputIconContainer}>
+                          <Ionicons name="exit-outline" size={18} color="#2563EB" />
+                        </View>
+                        <Text style={styles.dateText} numberOfLines={1}>
+                          {checkoutDate ? checkoutDate.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : "Select"}
+                        </Text>
+                      </Pressable>
+                      {showCheckoutPicker && (
+                        <DateTimePicker
+                          value={checkoutDate ?? new Date()}
+                          mode="datetime"
+                          minimumDate={checkinDate ?? new Date()}
+                          onChange={(_, date) => {
+                            setShowCheckoutPicker(false);
+                            if (date) setCheckoutDate(date);
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Meal</Text>
+
+                <View style={styles.mealRow}>
+                  <Pressable
+                    onPress={() => toggleMeal("breakfast")}
+                    style={({ pressed }) => [
+                      styles.mealCircle,
+                      selectedMeals.includes("breakfast") && styles.mealCircleSelected,
+                      pressed && styles.mealCirclePressed,
+                    ]}
+                  >
+                    <Text style={styles.mealEmoji}>🍳</Text>
+                    <Text
+                      style={[
+                        styles.mealLabel,
+                        selectedMeals.includes("breakfast") && styles.mealLabelSelected,
+                      ]}
+                    >
+                      Breakfast
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => toggleMeal("lunch")}
+                    style={({ pressed }) => [
+                      styles.mealCircle,
+                      selectedMeals.includes("lunch") && styles.mealCircleSelected,
+                      pressed && styles.mealCirclePressed,
+                    ]}
+                  >
+                    <Text style={styles.mealEmoji}>🍱</Text>
+                    <Text
+                      style={[
+                        styles.mealLabel,
+                        selectedMeals.includes("lunch") && styles.mealLabelSelected,
+                      ]}
+                    >
+                      Lunch
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => toggleMeal("dinner")}
+                    style={({ pressed }) => [
+                      styles.mealCircle,
+                      selectedMeals.includes("dinner") && styles.mealCircleSelected,
+                      pressed && styles.mealCirclePressed,
+                    ]}
+                  >
+                    <Text style={styles.mealEmoji}>🍽️</Text>
+                    <Text
+                      style={[
+                        styles.mealLabel,
+                        selectedMeals.includes("dinner") && styles.mealLabelSelected,
+                      ]}
+                    >
+                      Dinner
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={styles.qrInfo}>
+                <Ionicons name="qr-code" size={20} color="#2563EB" />
+                <View style={styles.qrContent}>
+                  <Text style={styles.qrTitle}>QR Access Generated</Text>
+                  <Text style={styles.qrSubtitle}>
+                    Guest can scan QR to access web services
+                  </Text>
+                </View>
+              </View>
+
+              {assignedRoom && (
+                <View style={styles.successContainer}>
+                  <Ionicons name="checkmark-circle" size={20} color="#16A34A" />
+                  <View style={styles.successContent}>
+                    <Text style={styles.successTitle}>Room Assigned!</Text>
+                    <Text style={styles.successSubtitle}>Room {assignedRoom} is now occupied</Text>
+                  </View>
                 </View>
               )}
-            </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.button,
+                  loading && styles.buttonDisabled,
+                  pressed && !loading && styles.buttonPressed,
+                ]}
+                onPress={assignRoom}
+                disabled={loading}
+              >
+                {loading ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator color="#fff" size="small" />
+                    <Text style={styles.buttonText}>Adding Guest...</Text>
+                  </View>
+                ) : (
+                  <View style={styles.buttonContent}>
+                    <Ionicons name="person-add" size={18} color="#fff" />
+                    <Text style={styles.buttonText}>Add Guest & Assign Room</Text>
+                    <Ionicons name="arrow-forward" size={18} color="#fff" />
+                  </View>
+                )}
+              </Pressable>
+            </View>
           </View>
-        </View>
+        </ScrollView>
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>
@@ -586,6 +615,13 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     backgroundColor: "rgba(37,99,235,0.06)",
   },
+  scroll: { flex: 1 },
+  dateGrid: {
+    flexDirection: Platform.OS === "web" ? "row" : "column",
+    gap: 12,
+    marginBottom: 8
+  },
+  dateColumn: { flex: 1, gap: 8 },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -597,6 +633,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 4,
+    zIndex: 10,
   },
   backButton: {
     width: 40,
@@ -650,7 +687,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   inputIconContainer: {
-    width: 48,
+    width: 44,
     height: 48,
     justifyContent: "center",
     alignItems: "center",
@@ -658,7 +695,7 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    paddingVertical: 16,
+    paddingVertical: 12,
     paddingHorizontal: 12,
     fontSize: 16,
     color: "#111827",
@@ -671,81 +708,85 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "#E5E7EB",
     overflow: "hidden",
+    minHeight: 48,
+    cursor: Platform.OS === "web" ? ("pointer" as any) : undefined,
   },
   dateText: {
     flex: 1,
-    paddingVertical: 16,
+    paddingVertical: 12,
     paddingHorizontal: 12,
-    fontSize: 16,
+    fontSize: 14,
     color: "#111827",
   },
   webDateInput: {
     flex: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    fontSize: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    fontSize: 14,
     color: "#111827",
     outlineStyle: "none" as any,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    minHeight: 40,
   },
-  mealRow: { flexDirection: "row", justifyContent: "space-between" },
+  mealRow: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
   mealCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    flex: 1,
+    aspectRatio: 1,
+    borderRadius: 12,
     backgroundColor: "#FFFFFF",
     borderWidth: 1.5,
     borderColor: "#E5E7EB",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
   },
   mealCirclePressed: { transform: [{ scale: 0.98 }], opacity: 0.95 },
   mealCircleSelected: {
     backgroundColor: "#2563EB",
     borderColor: "#2563EB",
     shadowColor: "#2563EB",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  mealEmoji: { fontSize: 26, marginBottom: 6 },
+  mealEmoji: { fontSize: 24, marginBottom: 4 },
   mealLabel: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#111827",
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#4B5563",
     textAlign: "center",
-    paddingHorizontal: 6,
   },
   mealLabelSelected: { color: "#FFFFFF" },
 
   qrInfo: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(37,99,235,0.1)",
-    padding: 16,
+    backgroundColor: "rgba(37,99,235,0.08)",
+    padding: 12,
     borderRadius: 12,
-    marginTop: 8,
+    marginTop: 4,
   },
   qrContent: { flex: 1, marginLeft: 12 },
-  qrTitle: { fontSize: 15, fontWeight: "700", color: "#2563EB" },
-  qrSubtitle: { fontSize: 13, color: "#2563EB", marginTop: 2 },
+  qrTitle: { fontSize: 14, fontWeight: "700", color: "#2563EB" },
+  qrSubtitle: { fontSize: 12, color: "#6B7280", marginTop: 2 },
 
   successContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(22,163,74,0.1)",
-    padding: 16,
+    backgroundColor: "rgba(22,163,74,0.08)",
+    padding: 12,
     borderRadius: 12,
-    marginTop: 12,
+    marginTop: 8,
   },
   successContent: { flex: 1, marginLeft: 8 },
-  successTitle: { fontSize: 15, fontWeight: "700", color: "#16A34A" },
-  successSubtitle: { fontSize: 13, color: "#16A34A" },
+  successTitle: { fontSize: 14, fontWeight: "700", color: "#16A34A" },
+  successSubtitle: { fontSize: 12, color: "#16A34A" },
 
   button: {
     backgroundColor: "#2563EB",
@@ -761,6 +802,6 @@ const styles = StyleSheet.create({
   loadingContainer: { flexDirection: "row", alignItems: "center", gap: 10 },
   buttonText: { color: "#FFF", fontSize: 16, fontWeight: "700" },
 
-  footer: { paddingHorizontal: 16, paddingBottom: 20, alignItems: "center" },
+  footer: { paddingHorizontal: 16, paddingVertical: 20, alignItems: "center" },
   footerText: { fontSize: 12, color: "#9CA3AF", textAlign: "center" },
 });
