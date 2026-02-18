@@ -89,7 +89,8 @@ export default function Onboarding() {
         }
     };
 
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${user?.uid || "roomio"}`;
+    const guestAppUrl = `https://roomio-guest.vercel.app/?admin=${user?.email || user?.uid || "roomio"}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(guestAppUrl)}`;
 
     const downloadQR = async () => {
         if (Platform.OS === 'web') {
