@@ -1,57 +1,71 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
-import { Animated, Image, SafeAreaView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import {
+  Animated,
+  Image,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+  Platform,
+  StatusBar,
+} from "react-native";
 
 // Import your logo image
 import logoImage from "../assets/images/logo.png";
 
 export default function Splash() {
   const router = useRouter();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
 
-  // Determine if the device is a desktop/tablet (width > 600) for responsive scaling
-  const isDesktop = width > 600;
+  // Determine responsive breakpoints for optimal scaling across all devices
+  const isDesktop = width > 1024;
+  const isTablet = width > 600 && width <= 1024;
+  const isMobile = width <= 600;
 
-  // Responsive values
-  const logoSize = isDesktop ? 160 : 100;
-  const fontSizeTitle = isDesktop ? 48 : 36;
-  const fontSizeBadge = isDesktop ? 13 : 11;
-  const fontSizeLoading = isDesktop ? 16 : 14;
-  const spacingMultiplier = isDesktop ? 1.5 : 1;
+  // Responsive scaling values - refined for better visual balance
+  const logoSize = isDesktop ? 180 : isTablet ? 140 : 110;
+  const fontSizeTitle = isDesktop ? 52 : isTablet ? 44 : 38;
+  const fontSizeBadge = isDesktop ? 14 : isTablet ? 13 : 12;
+  const fontSizeLoading = isDesktop ? 17 : isTablet ? 15 : 14;
+  const spacingMultiplier = isDesktop ? 1.8 : isTablet ? 1.4 : 1;
+  const progressWidth = isDesktop ? "60%" : isTablet ? "70%" : "85%";
+  const progressHeight = isDesktop ? 10 : isTablet ? 9 : 8;
 
   const progress = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const scaleAnim = useRef(new Animated.Value(0.85)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // Fade in and scale animation
+    // Fade in and scale animation - smoother entry
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 800,
+        duration: 900,
         useNativeDriver: true,
       }),
       Animated.spring(scaleAnim, {
         toValue: 1,
-        tension: 50,
-        friction: 7,
+        tension: 60,
+        friction: 9,
         useNativeDriver: true,
       }),
     ]).start();
 
-    // Pulse animation
+    // Continuous subtle pulse animation for logo
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 1000,
+          toValue: 1.04,
+          duration: 1200,
           useNativeDriver: true,
         }),
         Animated.timing(pulseAnim, {
           toValue: 1,
-          duration: 1000,
+          duration: 1200,
           useNativeDriver: true,
         }),
       ])
@@ -60,11 +74,42 @@ export default function Splash() {
     // Progress bar animation
     Animated.timing(progress, {
       toValue: 1,
-      duration: 2200,
+      duration: 2400,
       useNativeDriver: false,
     }).start(() => {
       router.replace("/home");
     });
+
+    // Web-specific: inject enhanced CSS for hover/transition effects
+    if (Platform.OS === "web") {
+      const style = document.createElement("style");
+      style.textContent = `
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-8px); }
+        }
+        .splash-container {
+          transition: transform 0.2s ease;
+        }
+        .splash-container:hover {
+          transform: scale(1.002);
+        }
+        .progress-track {
+          transition: box-shadow 0.3s ease;
+        }
+        .progress-track:hover {
+          box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08) !important;
+        }
+      `;
+      document.head.appendChild(style);
+      return () => {
+        document.head.removeChild(style);
+      };
+    }
   }, []);
 
   const widthInterpolated = progress.interpolate({
@@ -72,25 +117,48 @@ export default function Splash() {
     outputRange: ["0%", "100%"],
   });
 
+  const glowOpacity = progress.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.3, 0.8, 0.3],
+  });
+
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        {/* Decorative Background - Responsive scaling */}
+      <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
+      <View style={[styles.container, Platform.OS === "web" && "splash-container"]}>
+        {/* Decorative Background - Enhanced responsive scaling */}
         <View style={styles.backgroundDecor}>
-          <View style={[styles.bgCircle1, isDesktop && styles.bgCircle1Desktop]} />
-          <View style={[styles.bgCircle2, isDesktop && styles.bgCircle2Desktop]} />
-          <View style={[styles.bgCircle3, isDesktop && styles.bgCircle3Desktop]} />
-          <View style={[styles.bgCircle4, isDesktop && styles.bgCircle4Desktop]} />
+          <View style={[
+            styles.bgCircle1,
+            isDesktop && styles.bgCircle1Desktop,
+            isTablet && styles.bgCircle1Tablet,
+          ]} />
+          <View style={[
+            styles.bgCircle2,
+            isDesktop && styles.bgCircle2Desktop,
+            isTablet && styles.bgCircle2Tablet,
+          ]} />
+          <View style={[
+            styles.bgCircle3,
+            isDesktop && styles.bgCircle3Desktop,
+            isTablet && styles.bgCircle3Tablet,
+          ]} />
+          <View style={[
+            styles.bgCircle4,
+            isDesktop && styles.bgCircle4Desktop,
+            isTablet && styles.bgCircle4Tablet,
+          ]} />
+          <View style={styles.bgGradient} />
         </View>
 
-        {/* Logo Section */}
+        {/* Logo Section - Enhanced animations and spacing */}
         <Animated.View
           style={[
             styles.logoSection,
             {
               opacity: fadeAnim,
               transform: [{ scale: scaleAnim }],
-              marginBottom: 80 * spacingMultiplier,
+              marginBottom: 90 * spacingMultiplier,
             },
           ]}
         >
@@ -100,76 +168,140 @@ export default function Splash() {
               { transform: [{ scale: pulseAnim }] },
             ]}
           >
-            <View style={[styles.logoWrapper, { width: logoSize, height: logoSize }]}>
+            <View style={[
+              styles.logoWrapper,
+              {
+                width: logoSize,
+                height: logoSize,
+                borderRadius: logoSize / 2,
+              }
+            ]}>
+              {/* Enhanced glow effect behind logo */}
+              <View style={[
+                styles.logoGlow,
+                {
+                  width: logoSize * 1.4,
+                  height: logoSize * 1.4,
+                  borderRadius: (logoSize * 1.4) / 2,
+                }
+              ]} />
               <Image
                 source={logoImage}
                 style={styles.logoImage}
                 resizeMode="contain"
               />
+              {/* Subtle shine overlay */}
+              <View style={styles.logoShine} />
             </View>
           </Animated.View>
 
           <View style={styles.brandContainer}>
-            <Text style={[styles.logo, { fontSize: fontSizeTitle }]}>Roomio</Text>
+            <Text style={[
+              styles.logo,
+              {
+                fontSize: fontSizeTitle,
+                lineHeight: fontSizeTitle * 1.2,
+              }
+            ]}>Roomio</Text>
             <View style={styles.badge}>
-              <Ionicons name="shield-checkmark" size={isDesktop ? 18 : 14} color="#2563EB" />
-              <Text style={[styles.badgeText, { fontSize: fontSizeBadge }]}>SERVICE MANAGEMENT</Text>
+              <Ionicons
+                name="shield-checkmark"
+                size={isDesktop ? 20 : isTablet ? 17 : 15}
+                color="#2563EB"
+              />
+              <Text style={[
+                styles.badgeText,
+                { fontSize: fontSizeBadge }
+              ]}>SERVICE MANAGEMENT</Text>
             </View>
           </View>
         </Animated.View>
 
-        {/* Progress Section */}
-        <Animated.View style={[styles.progressSection, { opacity: fadeAnim }]}>
-          <View style={[styles.loader, isDesktop && styles.loaderDesktop]}>
+        {/* Progress Section - Enhanced visual feedback */}
+        <Animated.View style={[
+          styles.progressSection,
+          { opacity: fadeAnim },
+          { width: progressWidth }
+        ]}>
+          <View style={[
+            styles.loader,
+            Platform.OS === "web" && "progress-track",
+            { height: progressHeight },
+            isDesktop && styles.loaderDesktop,
+          ]}>
             <Animated.View
-              style={[styles.loaderFill, { width: widthInterpolated }]}
+              style={[
+                styles.loaderFill,
+                {
+                  width: widthInterpolated,
+                  height: progressHeight,
+                },
+              ]}
             >
-              <View style={styles.loaderGlow} />
+              {/* Animated glow at the leading edge */}
+              <Animated.View
+                style={[
+                  styles.loaderGlow,
+                  {
+                    opacity: glowOpacity,
+                    height: progressHeight,
+                  },
+                ]}
+              />
+              {/* Subtle shine effect */}
+              <View style={styles.loaderShine} />
             </Animated.View>
           </View>
 
-          <View style={[styles.loadingContainer, { marginTop: 24 * spacingMultiplier }]}>
+          <View style={[
+            styles.loadingContainer,
+            { marginTop: 28 * spacingMultiplier }
+          ]}>
             <View style={styles.loadingDots}>
-              <Animated.View
-                style={[
-                  styles.dot,
-                  {
-                    opacity: progress.interpolate({
-                      inputRange: [0, 0.33, 0.66, 1],
-                      outputRange: [0.3, 1, 0.3, 1],
-                    }),
-                  },
-                ]}
-              />
-              <Animated.View
-                style={[
-                  styles.dot,
-                  {
-                    opacity: progress.interpolate({
-                      inputRange: [0, 0.33, 0.66, 1],
-                      outputRange: [0.3, 0.3, 1, 0.3],
-                    }),
-                  },
-                ]}
-              />
-              <Animated.View
-                style={[
-                  styles.dot,
-                  {
-                    opacity: progress.interpolate({
-                      inputRange: [0, 0.33, 0.66, 1],
-                      outputRange: [0.3, 1, 0.3, 1],
-                    }),
-                  },
-                ]}
-              />
+              {[0, 1, 2].map((index) => (
+                <Animated.View
+                  key={index}
+                  style={[
+                    styles.dot,
+                    {
+                      opacity: progress.interpolate({
+                        inputRange: [0, 0.33, 0.66, 1],
+                        outputRange: index === 1
+                          ? [0.4, 1, 0.4, 1]
+                          : index === 0
+                            ? [0.4, 0.4, 1, 0.4]
+                            : [1, 0.4, 0.4, 1],
+                      }),
+                      transform: [{
+                        scale: progress.interpolate({
+                          inputRange: [0, 0.33, 0.66, 1],
+                          outputRange: index === 1
+                            ? [1, 1.3, 1, 1.3]
+                            : [1, 1, 1, 1],
+                        }),
+                      }],
+                    },
+                  ]}
+                />
+              ))}
             </View>
-            <Text style={[styles.loading, { fontSize: fontSizeLoading }]}>Initializing System</Text>
+            <Text style={[
+              styles.loading,
+              {
+                fontSize: fontSizeLoading,
+                lineHeight: fontSizeLoading * 1.4,
+              }
+            ]}>Initializing System</Text>
           </View>
         </Animated.View>
 
-        {/* Footer */}
-        <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>
+        {/* Footer - Better positioning across screen sizes */}
+        <Animated.View style={[
+          styles.footer,
+          { opacity: fadeAnim },
+          isDesktop && styles.footerDesktop,
+          { bottom: Math.min(40, height * 0.05) }
+        ]}>
           <View style={styles.statusContainer}>
             <View style={styles.statusDot} />
             <Text style={styles.statusText}>Secure Connection</Text>
@@ -185,6 +317,7 @@ export default function Splash() {
   );
 }
 
+// ✨ Enhanced Styles - Optimized for all platforms
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
@@ -203,197 +336,279 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    overflow: 'hidden', // Keeps circles inside on mobile
+    overflow: "hidden",
+    pointerEvents: "none",
+  },
+  bgGradient: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: "50%",
+    backgroundColor: "linear-gradient(180deg, rgba(37,99,235,0.02) 0%, transparent 70%)",
   },
   bgCircle1: {
     position: "absolute",
-    top: -100,
-    right: -80,
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: "rgba(37, 99, 235, 0.08)",
+    top: -120,
+    right: -100,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: "rgba(37, 99, 235, 0.07)",
+  },
+  bgCircle1Tablet: {
+    top: -140,
+    right: -120,
+    width: 340,
+    height: 340,
+    borderRadius: 170,
   },
   bgCircle1Desktop: {
-    top: -150,
-    right: -100,
-    width: 400,
-    height: 400,
-    borderRadius: 200,
+    top: -180,
+    right: -140,
+    width: 450,
+    height: 450,
+    borderRadius: 225,
   },
   bgCircle2: {
     position: "absolute",
-    top: "40%",
-    left: -120,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(37, 99, 235, 0.06)",
+    top: "45%",
+    left: -140,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: "rgba(37, 99, 235, 0.05)",
+  },
+  bgCircle2Tablet: {
+    left: -170,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
   },
   bgCircle2Desktop: {
-    left: -150,
-    width: 350,
-    height: 350,
-    borderRadius: 175,
+    left: -200,
+    width: 380,
+    height: 380,
+    borderRadius: 190,
   },
   bgCircle3: {
     position: "absolute",
-    bottom: -60,
-    right: -50,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: "rgba(37, 99, 235, 0.05)",
+    bottom: -80,
+    right: -70,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "rgba(37, 99, 235, 0.04)",
+  },
+  bgCircle3Tablet: {
+    bottom: -100,
+    right: -90,
+    width: 250,
+    height: 250,
+    borderRadius: 125,
   },
   bgCircle3Desktop: {
-    bottom: -100,
-    right: -100,
+    bottom: -130,
+    right: -120,
+    width: 340,
+    height: 340,
+    borderRadius: 170,
+  },
+  bgCircle4: {
+    position: "absolute",
+    bottom: "25%",
+    left: -100,
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    backgroundColor: "rgba(37, 99, 235, 0.03)",
+  },
+  bgCircle4Tablet: {
+    bottom: "20%",
+    left: -130,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+  },
+  bgCircle4Desktop: {
+    bottom: "15%",
+    left: -170,
     width: 300,
     height: 300,
     borderRadius: 150,
   },
-  bgCircle4: {
-    position: "absolute",
-    bottom: "30%",
-    left: -80,
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: "rgba(37, 99, 235, 0.04)",
-  },
-  bgCircle4Desktop: {
-    bottom: "20%",
-    left: -120,
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-  },
   logoSection: {
     alignItems: "center",
+    zIndex: 1,
   },
   logoContainer: {
-    marginBottom: 24,
+    marginBottom: 28,
+    alignItems: "center",
   },
   logoWrapper: {
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#FFFFFF",
     shadowColor: "#2563EB",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 28,
+    elevation: 16,
+    position: "relative",
+    overflow: "hidden",
+  },
+  logoGlow: {
+    position: "absolute",
+    backgroundColor: "rgba(37, 99, 235, 0.15)",
+    zIndex: 0,
   },
   logoImage: {
-    width: "100%",
-    height: "100%",
+    width: "85%",
+    height: "85%",
+    zIndex: 2,
+  },
+  logoShine: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 50%, rgba(255,255,255,0.1) 100%)",
+    zIndex: 1,
+    pointerEvents: "none",
   },
   brandContainer: {
     alignItems: "center",
   },
   logo: {
-    fontWeight: "700",
+    fontWeight: "800",
     color: "#111827",
-    letterSpacing: 1,
-    marginBottom: 12,
+    letterSpacing: 0.5,
+    marginBottom: 14,
+    textAlign: "center",
   },
   badge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(37, 99, 235, 0.1)",
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 6,
+    backgroundColor: "rgba(37, 99, 235, 0.12)",
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 22,
+    gap: 7,
+    borderWidth: 1,
+    borderColor: "rgba(37, 99, 235, 0.18)",
   },
   badgeText: {
     color: "#2563EB",
-    fontWeight: "700",
-    letterSpacing: 1.5,
+    fontWeight: "800",
+    letterSpacing: 1.8,
   },
   progressSection: {
-    width: "100%",
     alignItems: "center",
+    zIndex: 1,
   },
   loader: {
-    width: "80%",
-    height: 8,
+    width: "100%",
     backgroundColor: "#E5E7EB",
     borderRadius: 100,
     overflow: "hidden",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+    position: "relative",
   },
   loaderDesktop: {
-    height: 10,
-    maxWidth: 500, // Prevents bar from being too wide on large monitors
+    maxWidth: 550,
   },
   loaderFill: {
-    height: "100%",
     backgroundColor: "#2563EB",
     borderRadius: 100,
     position: "relative",
+    overflow: "hidden",
   },
   loaderGlow: {
     position: "absolute",
     right: 0,
     top: 0,
-    bottom: 0,
-    width: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    width: 30,
+    backgroundColor: "rgba(255, 255, 255, 0.4)",
     borderRadius: 100,
+  },
+  loaderShine: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)",
+    animationName: "shimmer",
+    animationDuration: "1.8s",
+    animationIterationCount: "infinite",
   },
   loadingContainer: {
     alignItems: "center",
   },
   loadingDots: {
     flexDirection: "row",
-    gap: 8,
-    marginBottom: 12,
+    gap: 10,
+    marginBottom: 14,
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
     backgroundColor: "#2563EB",
   },
   loading: {
     color: "#6B7280",
-    fontWeight: "600",
-    letterSpacing: 0.5,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textAlign: "center",
   },
   footer: {
     position: "absolute",
-    bottom: 40,
     alignItems: "center",
+    width: "100%",
+    paddingHorizontal: 24,
+    zIndex: 1,
+  },
+  footerDesktop: {
+    bottom: 50,
   },
   statusContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(22, 163, 74, 0.1)",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 8,
-    marginBottom: 10,
+    backgroundColor: "rgba(22, 163, 74, 0.12)",
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 22,
+    gap: 9,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(22, 163, 74, 0.18)",
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
     backgroundColor: "#16A34A",
+    shadowColor: "#16A34A",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
   },
   statusText: {
     fontSize: 12,
     color: "#16A34A",
-    fontWeight: "600",
+    fontWeight: "700",
+    letterSpacing: 0.3,
   },
   versionContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
   },
   versionDivider: {
     width: 4,
@@ -404,7 +619,7 @@ const styles = StyleSheet.create({
   versionText: {
     fontSize: 11,
     color: "#9CA3AF",
-    fontWeight: "500",
-    letterSpacing: 0.5,
+    fontWeight: "600",
+    letterSpacing: 0.8,
   },
 });
