@@ -7,15 +7,7 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: "#2563EB",
-        tabBarInactiveTintColor: "#6B7280", // Slightly darker for better contrast
-        tabBarStyle: {
-          backgroundColor: "#fff",
-          borderTopWidth: 1,
-          borderTopColor: "#E5E7EB",
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 8,
-        }
+        tabBarInactiveTintColor: "#9CA3AF",
       }}
     >
       <Tabs.Screen
@@ -41,9 +33,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="Tracking"
         options={{
-          title: "Orders",
+          title: "Tracking",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="stats-chart-outline" size={size} color={color} />
+            <Ionicons name="list-outline" size={size} color={color} />
           ),
         }}
       />
