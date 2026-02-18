@@ -24,9 +24,11 @@ import {
     updateDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
-import { generateAIMenuText } from "../../lib/aiService";
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import { generateAIMenuText, parseMenuFromAI } from "../../lib/aiService";
 
-type Category = "breakfast" | "lunch" | "dinner";
+type Category = "breakfast" | "lunch" | "dinner" | "beverages" | "desserts" | "snacks";
 
 type MenuItem = {
     id: string;
@@ -65,7 +67,28 @@ const CATEGORIES: Array<{
             title: "Dinner",
             subtitle: "Evening meals & specials",
             icon: "🍽️",
-            accent: "#6B7280",
+            accent: "#7C3AED",
+        },
+        {
+            key: "beverages",
+            title: "Beverages",
+            subtitle: "Drinks, Shakes & Juices",
+            icon: "🥤",
+            accent: "#06B6D4",
+        },
+        {
+            key: "desserts",
+            title: "Desserts",
+            subtitle: "Sweets & Treats",
+            icon: "🍨",
+            accent: "#EC4899",
+        },
+        {
+            key: "snacks",
+            title: "Snacks",
+            subtitle: "Light bites & sides",
+            icon: "🍟",
+            accent: "#F59E0B",
         },
     ];
 
@@ -95,6 +118,81 @@ export default function MenuScreen() {
     const [description, setDescription] = useState("");
     const [priceText, setPriceText] = useState("");
     const [isAvailable, setIsAvailable] = useState(true);
+
+    // AI Import states
+    const [aiImportModalOpen, setAiImportModalOpen] = useState(false);
+    const [aiParsing, setAiParsing] = useState(false);
+    const [parsedItems, setParsedItems] = useState<any[]>([]);
+
+    const handleCameraScan = async () => {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert("Permission Denied", "Camera access is needed to scan the menu.");
+            return;
+        }
+
+        const result = await ImagePicker.launchCameraAsync({
+            base64: true,
+            quality: 0.7,
+        });
+
+        if (!result.canceled && result.assets[0].base64) {
+            startAIParsing(result.assets[0].base64, 'image');
+        }
+    };
+
+    const handleGalleryUpload = async () => {
+        const result = await ImagePicker.launchImageLibraryAsync({
+            base64: true,
+            quality: 0.7,
+        });
+
+        if (!result.canceled && result.assets[0].base64) {
+            startAIParsing(result.assets[0].base64, 'image');
+        }
+    };
+
+    const startAIParsing = async (source: string, type: 'image' | 'text') => {
+        setAiParsing(true);
+        setAiImportModalOpen(true);
+        setParsedItems([]);
+        try {
+            const data = await parseMenuFromAI(source, type);
+            setParsedItems(data);
+        } catch (error) {
+            Alert.alert("AI Error", "Could not parse menu. Please try a clearer photo.");
+            setAiImportModalOpen(false);
+        } finally {
+            setAiParsing(false);
+        }
+    };
+
+    const saveParsedItems = async () => {
+        if (!user || parsedItems.length === 0) return;
+        setSaving(true);
+        try {
+            const uid = user.uid;
+            const ref = collection(db, "users", uid, "menuItems");
+
+            for (const item of parsedItems) {
+                await addDoc(ref, {
+                    ...item,
+                    isAvailable: true,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                });
+            }
+
+            setAiImportModalOpen(false);
+            setParsedItems([]);
+            Alert.alert("✨ Menu Synced", `Successfully added ${parsedItems.length} items to your menu!`);
+        } catch (error) {
+            console.error("Save parsed items failed:", error);
+            Alert.alert("Error", "Failed to save menu items.");
+        } finally {
+            setSaving(false);
+        }
+    };
 
     // AI Rewrite states
     const [showAIRewriteModal, setShowAIRewriteModal] = useState(false);
@@ -141,11 +239,14 @@ export default function MenuScreen() {
             breakfast: [],
             lunch: [],
             dinner: [],
+            beverages: [],
+            desserts: [],
+            snacks: [],
         };
         for (const it of items) {
-            if (it.category === "breakfast") map.breakfast.push(it);
-            if (it.category === "lunch") map.lunch.push(it);
-            if (it.category === "dinner") map.dinner.push(it);
+            if (map[it.category]) {
+                map[it.category].push(it);
+            }
         }
         return map;
     }, [items]);
@@ -1031,9 +1132,126 @@ export default function MenuScreen() {
                 </View>
             </Modal>
 
+            {/* AI Menu Import Modal */}
+            <Modal visible={aiImportModalOpen} animationType="slide" transparent>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalCard, { height: '80%' }]}>
+                        <View style={styles.modalHeader}>
+                            <View style={styles.modalHeaderLeft}>
+                                <View style={[styles.modalIcon, { backgroundColor: '#7C3AED15' }]}>
+                                    <Ionicons name="sparkles" size={18} color="#7C3AED" />
+                                </View>
+                                <View>
+                                    <Text style={styles.modalTitle}>AI Menu Sync</Text>
+                                    <Text style={styles.modalSubtitle}>Review detected dishes</Text>
+                                </View>
+                            </View>
+                            {!aiParsing && (
+                                <Pressable onPress={() => setAiImportModalOpen(false)} style={styles.modalCloseBtn}>
+                                    <Ionicons name="close" size={18} color="#6B7280" />
+                                </Pressable>
+                            )}
+                        </View>
+
+                        <View style={{ flex: 1, padding: 20 }}>
+                            {aiParsing ? (
+                                <View style={styles.parsingContainer}>
+                                    <ActivityIndicator size="large" color="#7C3AED" />
+                                    <Text style={styles.parsingTitle}>AI is reading your menu...</Text>
+                                    <Text style={styles.parsingDesc}>This will only take a moment. We're categorizing your dishes and generating descriptions.</Text>
+                                </View>
+                            ) : (
+                                <ScrollView showsVerticalScrollIndicator={false}>
+                                    {parsedItems.map((item, index) => (
+                                        <View key={index} style={styles.parsedItemCard}>
+                                            <View style={styles.parsedItemHeader}>
+                                                <Text style={styles.parsedItemName}>{item.name}</Text>
+                                                <Text style={styles.parsedItemPrice}>₹{item.price || '--'}</Text>
+                                            </View>
+                                            <Text style={styles.parsedItemDesc}>{item.description}</Text>
+                                            <View style={styles.parsedBadgeRow}>
+                                                <View style={[styles.parsedBadge, { backgroundColor: '#2563EB15' }]}>
+                                                    <Text style={[styles.parsedBadgeText, { color: '#2563EB' }]}>{item.category}</Text>
+                                                </View>
+                                                {item.subCategory && (
+                                                    <View style={[styles.parsedBadge, { backgroundColor: '#10B98115' }]}>
+                                                        <Text style={[styles.parsedBadgeText, { color: '#10B981' }]}>{item.subCategory}</Text>
+                                                    </View>
+                                                )}
+                                            </View>
+                                        </View>
+                                    ))}
+                                    <View style={{ height: 20 }} />
+                                </ScrollView>
+                            )}
+                        </View>
+
+                        {!aiParsing && parsedItems.length > 0 && (
+                            <View style={styles.modalFooter}>
+                                <Pressable
+                                    onPress={() => setAiImportModalOpen(false)}
+                                    style={styles.btnCancel}
+                                >
+                                    <Text style={styles.btnCancelText}>Discard</Text>
+                                </Pressable>
+                                <Pressable
+                                    onPress={saveParsedItems}
+                                    style={[styles.btnSave, { backgroundColor: '#7C3AED' }]}
+                                    disabled={saving}
+                                >
+                                    {saving ? (
+                                        <ActivityIndicator color="#fff" size="small" />
+                                    ) : (
+                                        <Text style={styles.btnSaveText}>Save All {parsedItems.length} Items</Text>
+                                    )}
+                                </Pressable>
+                            </View>
+                        )}
+                    </View>
+                </View>
+            </Modal>
+
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>Food Menu</Text>
-                <Text style={styles.headerSubtitle}>Manage restaurant items</Text>
+                <View style={styles.headerTop}>
+                    <View>
+                        <Text style={styles.headerTitle}>Food Menu</Text>
+                        <Text style={styles.headerSubtitle}>Manage restaurant items</Text>
+                    </View>
+                    <Pressable
+                        onPress={handleCameraScan}
+                        style={({ pressed }) => [
+                            styles.scanBtn,
+                            pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }
+                        ]}
+                    >
+                        <Ionicons name="camera" size={18} color="#fff" />
+                        <Text style={styles.scanBtnText}>Scan Menu</Text>
+                    </Pressable>
+                </View>
+
+                <View style={styles.importOptions}>
+                    <Pressable
+                        onPress={handleGalleryUpload}
+                        style={({ pressed }) => [
+                            styles.importOption,
+                            pressed && { backgroundColor: '#F3F4F6' }
+                        ]}
+                    >
+                        <Ionicons name="images-outline" size={16} color="#4B5563" />
+                        <Text style={styles.importOptionText}>Upload Photo</Text>
+                    </Pressable>
+                    <View style={styles.vDivider} />
+                    <Pressable
+                        onPress={() => Alert.alert("PDF Support", "Coming soon! For best results, please take a clear photo of your menu.")}
+                        style={({ pressed }) => [
+                            styles.importOption,
+                            pressed && { backgroundColor: '#F3F4F6' }
+                        ]}
+                    >
+                        <Ionicons name="document-text-outline" size={16} color="#4B5563" />
+                        <Text style={styles.importOptionText}>PDF Menu</Text>
+                    </Pressable>
+                </View>
             </View>
 
             <ScrollView
@@ -1680,5 +1898,124 @@ const styles = StyleSheet.create({
         color: "#4B5563",
         minWidth: 24,
         textAlign: "center",
+    },
+
+    /* AI Import Styles */
+    headerTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    scanBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#7C3AED',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 12,
+        gap: 6,
+        shadowColor: "#7C3AED",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 5,
+        elevation: 4,
+    },
+    scanBtnText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    importOptions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F3F4F6',
+        borderRadius: 12,
+        padding: 4,
+    },
+    importOption: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 8,
+        gap: 6,
+        borderRadius: 8,
+    },
+    importOptionText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#4B5563',
+    },
+    vDivider: {
+        width: 1,
+        height: 16,
+        backgroundColor: '#D1D5DB',
+    },
+    parsingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 40,
+    },
+    parsingTitle: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: '#111827',
+        marginTop: 20,
+        textAlign: 'center',
+    },
+    parsingDesc: {
+        fontSize: 14,
+        color: '#6B7280',
+        textAlign: 'center',
+        marginTop: 10,
+        lineHeight: 20,
+    },
+    parsedItemCard: {
+        backgroundColor: '#F9FAFB',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+    },
+    parsedItemHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 4,
+    },
+    parsedItemName: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#111827',
+        flex: 1,
+    },
+    parsedItemPrice: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#059669',
+        marginLeft: 8,
+    },
+    parsedItemDesc: {
+        fontSize: 13,
+        color: '#6B7280',
+        lineHeight: 18,
+        marginBottom: 10,
+    },
+    parsedBadgeRow: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    parsedBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+    },
+    parsedBadgeText: {
+        fontSize: 11,
+        fontWeight: '700',
+        textTransform: 'uppercase',
     },
 });
