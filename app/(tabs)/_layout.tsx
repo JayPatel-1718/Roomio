@@ -7,7 +7,15 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: "#2563EB",
-        tabBarInactiveTintColor: "#9CA3AF",
+        tabBarInactiveTintColor: "#6B7280", // Slightly darker for better contrast
+        tabBarStyle: {
+          backgroundColor: "#fff",
+          borderTopWidth: 1,
+          borderTopColor: "#E5E7EB",
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 8,
+        }
       }}
     >
       <Tabs.Screen
@@ -20,34 +28,32 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* ✅ Menu Tab */}
-      <Tabs.Screen
-        name="menu/index"
-        options={{
-          title: "Menu",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="restaurant" size={size} color={color} />
-          ),
-        }}
-      />
-
       <Tabs.Screen
         name="rooms"
         options={{
           title: "Rooms",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bed" size={size} color={color} />
+            <Ionicons name="bed-outline" size={size} color={color} />
           ),
         }}
       />
 
-      {/* ✅ NEW TAB: Tracking/Requests */}
       <Tabs.Screen
         name="Tracking"
         options={{
-          title: "Tracking",
+          title: "Orders",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="stats-chart" size={size} color={color} />
+            <Ionicons name="stats-chart-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="analytics"
+        options={{
+          title: "Analytics",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="bar-chart-outline" size={size} color={color} />
           ),
         }}
       />
