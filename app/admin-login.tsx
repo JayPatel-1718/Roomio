@@ -132,8 +132,9 @@ export default function AdminLogin() {
       await saveCredentials(email.trim(), password);
       await bumpLoginCount(email.trim());
       animateSuccess();
-    } catch (error) {
-      Alert.alert("Login Failed", "Invalid admin credentials");
+    } catch (error: any) {
+      console.error("Login Error:", error);
+      Alert.alert("Login Failed", error.message || "Invalid admin credentials");
     } finally {
       setLoading(false);
     }
@@ -158,8 +159,9 @@ export default function AdminLogin() {
       } else {
         router.replace("/ownership");
       }
-    } catch (e) {
-      Alert.alert("Continue Failed", "Saved login failed. Please login manually again.");
+    } catch (e: any) {
+      console.error("Continue Auth Error:", e);
+      Alert.alert("Continue Failed", e.message || "Saved login failed. Please login manually again.");
       setShowSavedChoice(false);
       setEmail(savedEmail);
       setPassword("");
