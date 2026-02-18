@@ -30,6 +30,7 @@ import {
 import { db, auth } from "../../firebase/firebaseConfig";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   getUserRoomsRef,
   getUserRoomRef,
@@ -404,7 +405,10 @@ export default function AddGuest() {
           <View style={styles.bgCircle1} />
           <View style={styles.bgCircle2} />
           <View style={styles.bgCircle3} />
-          <View style={styles.bgGradient} />
+          <LinearGradient
+            colors={["rgba(37,99,235,0.05)", "transparent"]}
+            style={styles.bgGradient}
+          />
         </View>
 
         {/* Header */}
@@ -431,7 +435,10 @@ export default function AddGuest() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={[styles.card, Platform.OS === "web" && "form-card"]}>
+          <View style={[
+            styles.card,
+            Platform.OS === "web" && { maxWidth: 680, width: "100%", alignSelf: "center" }
+          ]}>
             {/* Card Header */}
             <View style={styles.cardHeader}>
               <View style={styles.iconContainer}>
@@ -452,7 +459,6 @@ export default function AddGuest() {
                 <View style={[
                   styles.inputWrapper,
                   isFocused.name && styles.inputFocused,
-                  Platform.OS === "web" && "date-input-wrapper",
                 ]}>
                   <View style={styles.inputIconContainer}>
                     <Ionicons name="person-outline" size={18} color={isFocused.name ? "#2563EB" : "#9CA3AF"} />
@@ -476,7 +482,6 @@ export default function AddGuest() {
                 <View style={[
                   styles.inputWrapper,
                   isFocused.mobile && styles.inputFocused,
-                  Platform.OS === "web" && "date-input-wrapper",
                 ]}>
                   <View style={styles.inputIconContainer}>
                     <Ionicons name="call-outline" size={18} color={isFocused.mobile ? "#2563EB" : "#9CA3AF"} />
@@ -508,7 +513,6 @@ export default function AddGuest() {
                     <View style={[
                       styles.datePicker,
                       isFocused.checkin && styles.datePickerFocused,
-                      Platform.OS === "web" && "date-input-wrapper",
                     ]}>
                       <View style={styles.inputIconContainer}>
                         <Ionicons name="calendar-outline" size={18} color="#2563EB" />
@@ -653,7 +657,6 @@ export default function AddGuest() {
                     <View style={[
                       styles.datePicker,
                       isFocused.checkout && styles.datePickerFocused,
-                      Platform.OS === "web" && "date-input-wrapper",
                     ]}>
                       <View style={styles.inputIconContainer}>
                         <Ionicons name="exit-outline" size={18} color="#2563EB" />
@@ -805,7 +808,6 @@ export default function AddGuest() {
                         onPress={() => toggleMeal(meal)}
                         style={({ pressed }) => [
                           styles.mealCircle,
-                          Platform.OS === "web" && "meal-option",
                           isSelected && styles.mealCircleSelected,
                           pressed && styles.mealCirclePressed,
                         ]}
@@ -863,7 +865,6 @@ export default function AddGuest() {
                   styles.buttonPrimary,
                   loading && styles.buttonDisabled,
                   pressed && !loading && styles.buttonPressed,
-                  Platform.OS === "web" && "btn-primary",
                 ]}
                 onPress={assignRoom}
                 disabled={loading}
@@ -921,7 +922,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: "40%",
-    backgroundColor: "linear-gradient(180deg, rgba(37,99,235,0.03) 0%, transparent 70%)",
   },
   bgCircle1: {
     position: "absolute",
@@ -1129,11 +1129,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#111827",
     fontWeight: "500",
-    outlineStyle: "none",
     borderWidth: 0,
     backgroundColor: "transparent",
     minHeight: 52,
-    cursor: "pointer",
+    ...Platform.select({
+      web: {
+        outlineStyle: "none",
+        cursor: "pointer",
+      } as any,
+      default: {},
+    }),
   },
 
   // ✅ NEW: Mobile Date/Time Button Styles
