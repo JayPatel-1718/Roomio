@@ -55,10 +55,6 @@ export default function AdminLogin() {
         if (Platform.OS !== "web") {
           se = await SecureStore.getItemAsync(SAVED_EMAIL_KEY);
           sp = await SecureStore.getItemAsync(SAVED_PASS_KEY);
-        } else {
-          // Fallback for Web persistence
-          se = await AsyncStorage.getItem(SAVED_EMAIL_KEY);
-          sp = await AsyncStorage.getItem(SAVED_PASS_KEY);
         }
 
         setSavedEmail(se);
@@ -119,10 +115,6 @@ export default function AdminLogin() {
       if (Platform.OS !== "web") {
         await SecureStore.setItemAsync(SAVED_EMAIL_KEY, emailAddr);
         await SecureStore.setItemAsync(SAVED_PASS_KEY, pass);
-      } else {
-        // Safe storage for web
-        await AsyncStorage.setItem(SAVED_EMAIL_KEY, emailAddr);
-        await AsyncStorage.setItem(SAVED_PASS_KEY, pass);
       }
       setSavedEmail(emailAddr);
       setSavedPassword(pass);
