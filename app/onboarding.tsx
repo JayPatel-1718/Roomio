@@ -33,7 +33,7 @@ const TOTAL_STEPS = 4;
 type PropertyType = "Hotel";
 
 function padRoom(roomNumber: number) {
-    // For Ground floor numbers like 1 -> 001
+    // For Ground floor numbers like 1 -> 001 (display only)
     if (roomNumber < 100) return String(roomNumber).padStart(3, "0");
     return String(roomNumber);
 }
@@ -53,12 +53,12 @@ export default function Onboarding() {
     const [propertyType, setPropertyType] = useState<PropertyType>("Hotel");
 
     // Step 2 (building)
-    const [totalFloorsText, setTotalFloorsText] = useState("4"); // total levels
+    const [totalFloorsText, setTotalFloorsText] = useState("4");
     const [roomsPerFloorText, setRoomsPerFloorText] = useState("10");
     const [includeGroundFloor, setIncludeGroundFloor] = useState(true);
 
     // Step 3 (numbering)
-    // suffixStart: 0 => 100,101.. or ground 000,001..
+    // suffixStart: 0 => 100,101.. and ground 000,001..
     // suffixStart: 1 => 101.. and ground 001..
     const [suffixStartText, setSuffixStartText] = useState("1");
 
@@ -115,8 +115,8 @@ export default function Onboarding() {
     }, [suffixStartText]);
 
     const floorCodes = useMemo(() => {
-        // If include ground: floors are 0..(floorsCount-1) -> Ground, 1,2,3...
-        // If not: floors are 1..floorsCount -> 1,2,3,4...
+        // If include ground: 0..(floorsCount-1)
+        // Else: 1..floorsCount
         if (floorsCount <= 0) return [];
         if (includeGroundFloor) return Array.from({ length: floorsCount }, (_, i) => i);
         return Array.from({ length: floorsCount }, (_, i) => i + 1);
@@ -163,12 +163,12 @@ export default function Onboarding() {
             return false;
         }
 
-        // CRITICAL: prevent crossing to next hundred (prevents ground 109, or floor overlaps like 150..209)
+        // Prevent crossing to next hundred (prevents gaps like 150/160 when roomsPerFloor=10)
         const maxSuffix = suffixStart + roomsPerFloor - 1;
         if (maxSuffix > 99) {
             Alert.alert(
                 "Invalid Distribution",
-                `Rooms per floor (${roomsPerFloor}) with start (${suffixStart}) would cross into next floor.\n\nPlease reduce rooms per floor or lower start.\n\nRule: start + roomsPerFloor - 1 must be <= 99`
+                `Rooms per floor (${roomsPerFloor}) with start (${suffixStart}) would cross into next floor.\n\nRule: start + roomsPerFloor - 1 must be <= 99`
             );
             return false;
         }
@@ -223,7 +223,7 @@ export default function Onboarding() {
             if (ops > 0) await batch.commit();
         }
 
-        // 2) Create new rooms in batches
+        // 2) Create new rooms (only floor-wise distribution)
         const roomsToCreate = buildRoomNumbers();
         let batch = writeBatch(db);
         let ops = 0;
@@ -251,7 +251,7 @@ export default function Onboarding() {
         }
         if (ops > 0) await batch.commit();
 
-        // 3) Save config under user doc for future reference (optional but useful)
+        // 3) Save building config for future use
         await setDoc(
             doc(db, "users", uid),
             {
@@ -269,6 +269,7 @@ export default function Onboarding() {
         );
     };
 
+    // ✅ UPDATED: now redirects to Dashboard after QR step is done
     const finishOnboarding = async () => {
         if (!validateStep2()) return;
         if (!validateStep3()) return;
@@ -276,7 +277,13 @@ export default function Onboarding() {
         setLoading(true);
         try {
             await initializeRoomsFloorWise();
-            router.replace("/ownership");
+
+            // ✅ Go to Dashboard after onboarding
+            // If your dashboard file is app/(tabs)/dashboard.tsx, this is correct:
+            router.replace("/(tabs)/dashboard");
+
+            // If your dashboard is app/(tabs)/index.tsx instead, use:
+            // router.replace("/(tabs)");
         } catch (e) {
             console.error(e);
             Alert.alert("Error", "Failed to initialize rooms. Please try again.");
@@ -393,9 +400,7 @@ export default function Onboarding() {
                             <View style={styles.inputRow}>
                                 <View style={{ flex: 1 }}>
                                     <Text style={styles.label}>Total Floors</Text>
-                                    <Text style={styles.labelHint}>
-                                        Total levels in the building
-                                    </Text>
+                                    <Text style={styles.labelHint}>Total levels in the building</Text>
                                 </View>
                                 <View style={styles.compactInputWrap}>
                                     <TextInput
@@ -415,9 +420,7 @@ export default function Onboarding() {
                             <View style={styles.inputRow}>
                                 <View style={{ flex: 1 }}>
                                     <Text style={styles.label}>Rooms per Floor</Text>
-                                    <Text style={styles.labelHint}>
-                                        Same count on each floor
-                                    </Text>
+                                    <Text style={styles.labelHint}>Same count on each floor</Text>
                                 </View>
                                 <View style={styles.compactInputWrap}>
                                     <TextInput
@@ -437,9 +440,7 @@ export default function Onboarding() {
                             <View style={styles.inputRow}>
                                 <View style={{ flex: 1 }}>
                                     <Text style={styles.label}>Include Ground Floor</Text>
-                                    <Text style={styles.labelHint}>
-                                        If enabled, floor 0 = Ground
-                                    </Text>
+                                    <Text style={styles.labelHint}>If enabled, floor 0 = Ground</Text>
                                 </View>
                                 <Pressable
                                     onPress={() => setIncludeGroundFloor((v) => !v)}
@@ -557,7 +558,7 @@ export default function Onboarding() {
                                 ))}
 
                                 <Text style={styles.previewHint}>
-                                    This prevents unwanted numbers like 150/160 when you only have 10 rooms per floor.
+                                    This prevents unwanted room numbers like 150/160 when you only have 10 rooms per floor.
                                 </Text>
                             </View>
                         </View>
@@ -584,6 +585,13 @@ export default function Onboarding() {
                                 <Ionicons name="download-outline" size={20} color="#2563EB" />
                                 <Text style={styles.downloadText}>Download QR Code</Text>
                             </Pressable>
+
+                            <View style={styles.finalHintBox}>
+                                <Ionicons name="checkmark-circle-outline" size={18} color="#16A34A" />
+                                <Text style={styles.finalHintText}>
+                                    Next: We’ll take you to the Dashboard.
+                                </Text>
+                            </View>
                         </View>
                     </View>
                 );
@@ -653,7 +661,7 @@ export default function Onboarding() {
                             ) : (
                                 <>
                                     <Text style={styles.nextBtnText}>
-                                        {step === TOTAL_STEPS ? "Finish Setup" : "Continue"}
+                                        {step === TOTAL_STEPS ? "Go to Dashboard" : "Continue"}
                                     </Text>
                                     <Ionicons name="arrow-forward" size={20} color="#fff" />
                                 </>
@@ -886,6 +894,20 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     downloadText: { fontSize: 14, fontWeight: "900", color: "#2563EB" },
+
+    finalHintBox: {
+        marginTop: 14,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 14,
+        backgroundColor: "rgba(22, 163, 74, 0.08)",
+        borderWidth: 1,
+        borderColor: "rgba(22, 163, 74, 0.15)",
+    },
+    finalHintText: { fontWeight: "800", color: "#16A34A" },
 
     footer: { flexDirection: "row", alignItems: "center", marginTop: 24, gap: 12 },
     backBtn: { paddingHorizontal: 8, height: 56, justifyContent: "center", alignItems: "center", minWidth: 80 },
