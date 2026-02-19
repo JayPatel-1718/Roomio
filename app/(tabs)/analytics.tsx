@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,9 @@ import {
   Pressable,
   useWindowDimensions,
   Alert,
+  Animated,
+  useColorScheme,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -31,13 +34,13 @@ interface AnalyticsData {
   // Revenue
   totalRevenue: number;
   revenueChange: number;
-  
+
   // Rooms
   activeRooms: number;
   availableRooms: number;
   occupancyRate: number;
   totalRooms: number;
-  
+
   // Service Requests
   serviceRequests: {
     total: number;
@@ -47,7 +50,7 @@ interface AnalyticsData {
     cancelled: number;
   };
   completionRate: number;
-  
+
   // Food Orders
   foodOrders: {
     total: number;
@@ -56,23 +59,23 @@ interface AnalyticsData {
     completed: number;
     cancelled: number;
   };
-  
+
   // Performance
   avgResponseTime: number;
   avgPreparationTime: number;
-  
+
   // Chart Data
   dailyRevenue: Array<{ day: string; revenue: number }>;
   dailyOrders: Array<{ day: string; count: number }>;
   peakHours: Array<{ hour: string; orders: number }>;
   topItems: Array<{ name: string; count: number; revenue: number }>;
   topServices: Array<{ name: string; count: number; revenue: number }>;
-  
+
   // Guest Stats
   totalGuests: number;
   checkedInGuests: number;
   avgStayDuration: number;
-  
+
   // Summary
   totalOrders: number;
   totalServiceRequests: number;
@@ -93,10 +96,15 @@ export default function AnalyticsDashboard() {
   const user = auth.currentUser;
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const systemColorScheme = useColorScheme();
 
   const isSmall = width < 380;
   const isMedium = width >= 380 && width < 600;
   const isLarge = width >= 600;
+  const isWide = width >= 900;
+
+  // ✅ Theme state (dark/light)
+  const [isDark, setIsDark] = useState(systemColorScheme === "dark");
 
   const [selectedRange, setSelectedRange] = useState<"week" | "month" | "year">("week");
   const [loading, setLoading] = useState(true);
@@ -138,6 +146,63 @@ export default function AnalyticsDashboard() {
     pendingCount: 0,
   });
 
+  // ✅ Dynamic theme object (matches Dashboard)
+  const theme = isDark
+    ? {
+      bgMain: "#010409",
+      bgCard: "rgba(13, 17, 23, 0.6)",
+      bgNav: "rgba(1, 4, 9, 0.8)",
+      textMain: "#f0f6fc",
+      textMuted: "#8b949e",
+      glass: "rgba(255, 255, 255, 0.03)",
+      glassBorder: "rgba(255, 255, 255, 0.1)",
+      shadow: "rgba(0, 0, 0, 0.6)",
+      primary: "#2563eb",
+      primaryHover: "#1d4ed8",
+      primaryGlow: "rgba(37, 99, 235, 0.35)",
+      accent: "#38bdf8",
+      success: "#22c55e",
+      warning: "#f59e0b",
+      danger: "#ef4444",
+    }
+    : {
+      bgMain: "#f8fafc",
+      bgCard: "#ffffff",
+      bgNav: "rgba(248, 250, 252, 0.9)",
+      textMain: "#0f172a",
+      textMuted: "#64748b",
+      glass: "rgba(37, 99, 235, 0.04)",
+      glassBorder: "rgba(37, 99, 235, 0.12)",
+      shadow: "rgba(37, 99, 235, 0.15)",
+      primary: "#2563eb",
+      primaryHover: "#1d4ed8",
+      primaryGlow: "rgba(37, 99, 235, 0.25)",
+      accent: "#0ea5e9",
+      success: "#16a34a",
+      warning: "#f59e0b",
+      danger: "#dc2626",
+    };
+
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.95)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
   useEffect(() => {
     if (!user) {
       router.replace("/admin-login");
@@ -149,19 +214,19 @@ export default function AnalyticsDashboard() {
   const loadAnalytics = async (uid: string, range: "week" | "month" | "year") => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const now = new Date();
       const rangeConfig = TIME_RANGES.find((r) => r.key === range)!;
       const startDate = new Date(now.getTime() - rangeConfig.days * 24 * 60 * 60 * 1000);
-      
+
       console.log(`📊 Loading analytics for ${rangeConfig.days} days`);
 
       // 1️⃣ Load Rooms Data
       const roomsRef = collection(db, "users", uid, "rooms");
       const roomsSnap = await getDocs(roomsRef);
       const allRooms = roomsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      
+
       const activeRooms = allRooms.filter((r: any) => r.status === "occupied").length;
       const availableRooms = allRooms.filter((r: any) => r.status === "available").length;
       const totalRooms = allRooms.length;
@@ -174,7 +239,7 @@ export default function AnalyticsDashboard() {
         where("adminId", "==", uid)
       );
       const serviceRequestsSnap = await getDocs(serviceRequestsQuery);
-      
+
       let serviceTotal = 0;
       let servicePending = 0;
       let serviceInProgress = 0;
@@ -182,38 +247,38 @@ export default function AnalyticsDashboard() {
       let serviceCancelled = 0;
       let totalResponseTime = 0;
       let responseTimeCount = 0;
-      
+
       const serviceRequestsInRange: any[] = [];
       const serviceTypeCount: { [key: string]: { count: number; revenue: number } } = {};
 
       serviceRequestsSnap.docs.forEach((doc) => {
         const data = doc.data();
         const createdAt = data.createdAt?.toDate?.() || new Date(0);
-        
+
         // Count all for totals
         serviceTotal++;
-        
+
         // Status counts
         const status = data.status || "pending";
         if (status === "pending") servicePending++;
         else if (status === "in-progress") serviceInProgress++;
         else if (status === "completed") serviceCompleted++;
         else if (status === "cancelled") serviceCancelled++;
-        
+
         // Filter by date range for trends
         if (createdAt >= startDate && createdAt <= now) {
           serviceRequestsInRange.push(data);
-          
+
           // Track by type
           const type = data.type || "Other";
           const charges = data.charges || 0;
-          
+
           if (!serviceTypeCount[type]) {
             serviceTypeCount[type] = { count: 0, revenue: 0 };
           }
           serviceTypeCount[type].count++;
           serviceTypeCount[type].revenue += charges;
-          
+
           // Calculate response time (time between creation and acceptance)
           if (data.acceptedAt && data.createdAt) {
             const created = data.createdAt.toDate();
@@ -232,7 +297,7 @@ export default function AnalyticsDashboard() {
         where("adminId", "==", uid)
       );
       const foodOrdersSnap = await getDocs(foodOrdersQuery);
-      
+
       let orderTotal = 0;
       let orderPending = 0;
       let orderAccepted = 0;
@@ -241,7 +306,7 @@ export default function AnalyticsDashboard() {
       let totalRevenue = 0;
       let totalPreparationTime = 0;
       let preparationTimeCount = 0;
-      
+
       const dailyRevenueMap: { [key: string]: number } = {};
       const dailyOrdersMap: { [key: string]: number } = {};
       const hourlyOrdersMap: { [key: string]: number } = {};
@@ -251,27 +316,27 @@ export default function AnalyticsDashboard() {
         const data = doc.data();
         const createdAt = data.createdAt?.toDate?.() || new Date(0);
         const amount = data.totalAmount || data.totalPrice || data.price || 0;
-        
+
         // Count all orders
         orderTotal++;
         totalRevenue += amount;
-        
+
         // Status counts
         const status = data.status || "pending";
         if (status === "pending") orderPending++;
         else if (status === "accepted" || status === "in-progress") orderAccepted++;
         else if (status === "completed") orderCompleted++;
         else if (status === "cancelled") orderCancelled++;
-        
+
         // Filter by date range for trends
         if (createdAt >= startDate && createdAt <= now) {
           // Daily revenue
           const dayKey = DAYS[createdAt.getDay()];
           dailyRevenueMap[dayKey] = (dailyRevenueMap[dayKey] || 0) + amount;
-          
+
           // Daily orders count
           dailyOrdersMap[dayKey] = (dailyOrdersMap[dayKey] || 0) + 1;
-          
+
           // Hourly distribution
           const hour = createdAt.getHours();
           let hourKey = "00:00";
@@ -281,9 +346,9 @@ export default function AnalyticsDashboard() {
           else if (hour < 16) hourKey = "12:00";
           else if (hour < 20) hourKey = "16:00";
           else hourKey = "20:00";
-          
+
           hourlyOrdersMap[hourKey] = (hourlyOrdersMap[hourKey] || 0) + 1;
-          
+
           // Track items
           const items = data.items || data.orderDetails || [];
           if (Array.isArray(items)) {
@@ -291,7 +356,7 @@ export default function AnalyticsDashboard() {
               const itemName = item.name || item.item || "Unknown Item";
               const qty = item.quantity || item.qty || 1;
               const itemPrice = item.price || 0;
-              
+
               if (!itemCountMap[itemName]) {
                 itemCountMap[itemName] = { count: 0, revenue: 0 };
               }
@@ -302,14 +367,14 @@ export default function AnalyticsDashboard() {
             const itemName = data.item;
             const qty = data.quantity || data.qty || 1;
             const price = data.price || 0;
-            
+
             if (!itemCountMap[itemName]) {
               itemCountMap[itemName] = { count: 0, revenue: 0 };
             }
             itemCountMap[itemName].count += qty;
             itemCountMap[itemName].revenue += qty * price;
           }
-          
+
           // Calculate preparation time
           if (data.acceptedAt && data.completedAt) {
             const accepted = data.acceptedAt.toDate();
@@ -328,20 +393,20 @@ export default function AnalyticsDashboard() {
         where("adminId", "==", uid)
       );
       const guestsSnap = await getDocs(guestsQuery);
-      
+
       let totalGuests = 0;
       let activeGuests = 0;
       let totalStayDuration = 0;
       let stayCount = 0;
-      
+
       guestsSnap.docs.forEach((doc) => {
         const data = doc.data();
         totalGuests++;
-        
+
         if (data.isActive === true) {
           activeGuests++;
         }
-        
+
         // Calculate stay duration for completed stays
         if (data.createdAt && data.checkedOutAt) {
           const checkIn = data.createdAt.toDate();
@@ -381,39 +446,39 @@ export default function AnalyticsDashboard() {
         .slice(0, 5);
 
       // 8️⃣ Calculate Averages
-      const avgResponseTime = responseTimeCount > 0 
-        ? Math.round(totalResponseTime / responseTimeCount) 
+      const avgResponseTime = responseTimeCount > 0
+        ? Math.round(totalResponseTime / responseTimeCount)
         : 0;
-      
-      const avgPreparationTime = preparationTimeCount > 0 
-        ? Math.round(totalPreparationTime / preparationTimeCount) 
+
+      const avgPreparationTime = preparationTimeCount > 0
+        ? Math.round(totalPreparationTime / preparationTimeCount)
         : 12; // Default if no data
-      
-      const avgStayDuration = stayCount > 0 
-        ? Math.round((totalStayDuration / stayCount) * 10) / 10 
+
+      const avgStayDuration = stayCount > 0
+        ? Math.round((totalStayDuration / stayCount) * 10) / 10
         : 0;
 
       // 9️⃣ Calculate Revenue Change (compare with previous period)
       const prevStartDate = new Date(startDate.getTime() - rangeConfig.days * 24 * 60 * 60 * 1000);
       let prevRevenue = 0;
-      
+
       foodOrdersSnap.docs.forEach((doc) => {
         const data = doc.data();
         const createdAt = data.createdAt?.toDate?.() || new Date(0);
         const amount = data.totalAmount || data.totalPrice || data.price || 0;
-        
+
         if (createdAt >= prevStartDate && createdAt < startDate) {
           prevRevenue += amount;
         }
       });
-      
-      const revenueChange = prevRevenue > 0 
-        ? ((totalRevenue - prevRevenue) / prevRevenue) * 100 
+
+      const revenueChange = prevRevenue > 0
+        ? ((totalRevenue - prevRevenue) / prevRevenue) * 100
         : 0;
 
       // 🔟 Completion Rate
-      const completionRate = serviceTotal > 0 
-        ? (serviceCompleted / serviceTotal) * 100 
+      const completionRate = serviceTotal > 0
+        ? (serviceCompleted / serviceTotal) * 100
         : 0;
 
       setAnalytics({
@@ -475,14 +540,19 @@ export default function AnalyticsDashboard() {
   const peakChartHeight = isSmall ? 90 : 130;
 
   const MetricCard = ({ icon, value, label, color, suffix = "" }: any) => (
-    <View style={[styles.metricCard, { width: metricCardWidth, marginBottom: isSmall ? gap : 0 }]}>
+    <View style={[styles.metricCard, {
+      width: metricCardWidth,
+      marginBottom: isSmall ? gap : 0,
+      backgroundColor: theme.bgCard,
+      borderColor: theme.glassBorder,
+    }]}>
       <View style={[styles.metricIconWrap, { backgroundColor: `${color}15` }]}>
         <Ionicons name={icon} size={isSmall ? 14 : 16} color={color} />
       </View>
-      <Text style={[styles.metricValue, { fontSize: valueFontSize }]}>
+      <Text style={[styles.metricValue, { fontSize: valueFontSize, color: theme.textMain }]}>
         {typeof value === 'number' ? value.toLocaleString() : value}{suffix}
       </Text>
-      <Text style={[styles.metricLabel, { fontSize: smallFontSize }]}>{label}</Text>
+      <Text style={[styles.metricLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>{label}</Text>
     </View>
   );
 
@@ -492,11 +562,11 @@ export default function AnalyticsDashboard() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.bgMain }]}>
         <View style={styles.loadingContainer}>
-          <Ionicons name="bar-chart" size={48} color="#2563EB" />
-          <Text style={styles.loadingText}>Loading Analytics...</Text>
-          <Text style={styles.loadingSubtext}>Fetching your business data</Text>
+          <Ionicons name="bar-chart" size={48} color={theme.primary} />
+          <Text style={[styles.loadingText, { color: theme.textMain }]}>Loading Analytics...</Text>
+          <Text style={[styles.loadingSubtext, { color: theme.textMuted }]}>Fetching your business data</Text>
         </View>
       </SafeAreaView>
     );
@@ -504,13 +574,13 @@ export default function AnalyticsDashboard() {
 
   if (error) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.bgMain }]}>
         <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={48} color="#DC2626" />
-          <Text style={styles.errorText}>Failed to Load</Text>
-          <Text style={styles.errorSubtext}>{error}</Text>
+          <Ionicons name="alert-circle" size={48} color={theme.danger} />
+          <Text style={[styles.errorText, { color: theme.danger }]}>Failed to Load</Text>
+          <Text style={[styles.errorSubtext, { color: theme.textMuted }]}>{error}</Text>
           <Pressable
-            style={styles.retryButton}
+            style={[styles.retryButton, { backgroundColor: theme.primary }]}
             onPress={() => user && loadAnalytics(user.uid, selectedRange)}
           >
             <Text style={styles.retryText}>Retry</Text>
@@ -521,33 +591,60 @@ export default function AnalyticsDashboard() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView
-        style={styles.container}
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bgMain }]}>
+      <Animated.ScrollView
+        style={[styles.container, { opacity: fadeAnim }]}
         contentContainerStyle={[styles.content, { padding: spacing }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Background Decor */}
         <View style={styles.backgroundDecor}>
-          <View style={styles.bgCircle1} />
-          <View style={styles.bgCircle2} />
-          <View style={styles.bgCircle3} />
+          <View style={[styles.bgCircle1, { backgroundColor: theme.primaryGlow }]} />
+          <View style={[styles.bgCircle2, { backgroundColor: theme.primaryGlow }]} />
+          <View style={[styles.bgCircle3, { backgroundColor: theme.primaryGlow }]} />
         </View>
 
         {/* Header */}
         <View style={[styles.header, { marginBottom: spacing * 2 }]}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.greeting, { fontSize: smallFontSize }]}>Analytics Dashboard</Text>
-            <Text style={[styles.title, { fontSize: titleFontSize }]}>Performance Overview</Text>
+            <Text style={[styles.greeting, { fontSize: smallFontSize, color: theme.textMuted }]}>
+              Analytics Dashboard
+            </Text>
+            <Text style={[styles.title, { fontSize: titleFontSize, color: theme.textMain }]}>
+              Performance Overview
+            </Text>
           </View>
-          <View style={styles.badge}>
-            <Ionicons name="trending-up" size={isSmall ? 12 : 14} color="#2563EB" />
-            {!isSmall && <Text style={styles.badgeText}>REAL-TIME</Text>}
+
+          <View style={styles.headerRight}>
+            {/* Theme Toggle */}
+            <Pressable
+              onPress={() => setIsDark(!isDark)}
+              style={({ pressed }) => [
+                styles.themeToggle,
+                { backgroundColor: theme.glass, borderColor: theme.glassBorder },
+                pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+              ]}
+            >
+              <Ionicons
+                name={isDark ? "sunny-outline" : "moon-outline"}
+                size={20}
+                color={theme.primary}
+              />
+            </Pressable>
+
+            <View style={[styles.badge, { backgroundColor: `${theme.primary}18` }]}>
+              <Ionicons name="trending-up" size={isSmall ? 12 : 14} color={theme.primary} />
+              {!isSmall && <Text style={[styles.badgeText, { color: theme.primary }]}>REAL-TIME</Text>}
+            </View>
           </View>
         </View>
 
         {/* Time Range Selector */}
-        <View style={[styles.timeRangeContainer, { marginBottom: gap * 2 }]}>
+        <View style={[styles.timeRangeContainer, {
+          marginBottom: gap * 2,
+          backgroundColor: theme.bgCard,
+          borderColor: theme.glassBorder,
+        }]}>
           {TIME_RANGES.map((range) => (
             <Pressable
               key={range.key}
@@ -561,8 +658,8 @@ export default function AnalyticsDashboard() {
               <Text
                 style={[
                   styles.timeRangeText,
+                  { fontSize: smallFontSize, color: theme.textMuted },
                   selectedRange === range.key && styles.timeRangeTextActive,
-                  { fontSize: smallFontSize },
                 ]}
               >
                 {range.label}
@@ -572,25 +669,38 @@ export default function AnalyticsDashboard() {
         </View>
 
         {/* Revenue Card */}
-        <View style={[styles.card, { padding: spacing, marginBottom: gap }]}>
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              padding: spacing,
+              marginBottom: gap,
+              backgroundColor: theme.bgCard,
+              borderColor: theme.glassBorder,
+              transform: [{ scale: scaleAnim }],
+            }
+          ]}
+        >
           <View style={styles.cardHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.cardLabel, { fontSize: smallFontSize }]}>Total Revenue</Text>
-              <Text style={[styles.revenueValue, { fontSize: revenueValueSize }]}>
+              <Text style={[styles.cardLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                Total Revenue
+              </Text>
+              <Text style={[styles.revenueValue, { fontSize: revenueValueSize, color: theme.textMain }]}>
                 ₹{analytics.totalRevenue.toLocaleString()}
               </Text>
             </View>
-            <View style={[styles.changeIndicator, { 
+            <View style={[styles.changeIndicator, {
               backgroundColor: analytics.revenueChange >= 0 ? 'rgba(22, 163, 74, 0.1)' : 'rgba(220, 38, 38, 0.1)'
             }]}>
-              <Ionicons 
-                name={analytics.revenueChange >= 0 ? "trending-up" : "trending-down"} 
-                size={isSmall ? 12 : 14} 
-                color={analytics.revenueChange >= 0 ? "#16A34A" : "#DC2626"} 
+              <Ionicons
+                name={analytics.revenueChange >= 0 ? "trending-up" : "trending-down"}
+                size={isSmall ? 12 : 14}
+                color={analytics.revenueChange >= 0 ? theme.success : theme.danger}
               />
-              <Text style={[styles.changeText, { 
+              <Text style={[styles.changeText, {
                 fontSize: smallFontSize,
-                color: analytics.revenueChange >= 0 ? "#16A34A" : "#DC2626"
+                color: analytics.revenueChange >= 0 ? theme.success : theme.danger
               }]}>
                 {analytics.revenueChange > 0 ? '+' : ''}{analytics.revenueChange}%
               </Text>
@@ -607,48 +717,55 @@ export default function AnalyticsDashboard() {
                       styles.chartBar,
                       {
                         height: (data.revenue / maxRevenue) * (chartHeight - 30),
-                        backgroundColor: idx === analytics.dailyRevenue.length - 1 ? "#2563EB" : "rgba(37, 99, 235, 0.5)",
+                        backgroundColor: idx === analytics.dailyRevenue.length - 1 ? theme.primary : `${theme.primary}80`,
                       },
                     ]}
                   />
-                  <Text style={[styles.chartLabel, { fontSize: smallFontSize - 1 }]}>{data.day}</Text>
+                  <Text style={[styles.chartLabel, { fontSize: smallFontSize - 1, color: theme.textMuted }]}>
+                    {data.day}
+                  </Text>
                 </View>
               ))}
             </View>
           </View>
-        </View>
+        </Animated.View>
 
         {/* Key Metrics Grid */}
         <View style={[styles.metricsGrid, { marginBottom: gap, gap }]}>
-          <MetricCard 
-            icon="bed-outline" 
-            value={analytics.activeRooms} 
-            label="Active Rooms" 
-            color="#2563EB" 
+          <MetricCard
+            icon="bed-outline"
+            value={analytics.activeRooms}
+            label="Active Rooms"
+            color={theme.primary}
           />
-          <MetricCard 
-            icon="bed" 
-            value={analytics.availableRooms} 
-            label="Available" 
-            color="#16A34A" 
+          <MetricCard
+            icon="bed"
+            value={analytics.availableRooms}
+            label="Available"
+            color={theme.success}
           />
-          <MetricCard 
-            icon="people-outline" 
-            value={analytics.checkedInGuests} 
-            label="Checked In" 
-            color="#8B5CF6" 
+          <MetricCard
+            icon="people-outline"
+            value={analytics.checkedInGuests}
+            label="Checked In"
+            color="#8B5CF6"
           />
-          <MetricCard 
-            icon="restaurant-outline" 
-            value={analytics.foodOrders.total} 
-            label="Total Orders" 
-            color="#F59E0B" 
+          <MetricCard
+            icon="restaurant-outline"
+            value={analytics.foodOrders.total}
+            label="Total Orders"
+            color={theme.warning}
           />
         </View>
 
         {/* Daily Orders Chart */}
-        <View style={[styles.card, { padding: spacing, marginBottom: gap }]}>
-          <Text style={[styles.cardLabel, { fontSize: smallFontSize, marginBottom: spacing }]}>
+        <View style={[styles.card, {
+          padding: spacing,
+          marginBottom: gap,
+          backgroundColor: theme.bgCard,
+          borderColor: theme.glassBorder,
+        }]}>
+          <Text style={[styles.cardLabel, { fontSize: smallFontSize, marginBottom: spacing, color: theme.textMuted }]}>
             Daily Orders
           </Text>
           <View style={{ height: chartHeight - 20, justifyContent: "flex-end" }}>
@@ -660,11 +777,13 @@ export default function AnalyticsDashboard() {
                       styles.chartBar,
                       {
                         height: (data.count / maxOrders) * (chartHeight - 50),
-                        backgroundColor: "#F59E0B",
+                        backgroundColor: theme.warning,
                       },
                     ]}
                   />
-                  <Text style={[styles.chartLabel, { fontSize: smallFontSize - 1 }]}>{data.day}</Text>
+                  <Text style={[styles.chartLabel, { fontSize: smallFontSize - 1, color: theme.textMuted }]}>
+                    {data.day}
+                  </Text>
                 </View>
               ))}
             </View>
@@ -672,59 +791,85 @@ export default function AnalyticsDashboard() {
         </View>
 
         {/* Order Status */}
-        <View style={[styles.rowGrid, { 
-          flexDirection: isSmall ? "column" : "row", 
-          gap, 
-          marginBottom: gap 
+        <View style={[styles.rowGrid, {
+          flexDirection: isSmall ? "column" : "row",
+          gap,
+          marginBottom: gap
         }]}>
-          <View style={[styles.card, { flex: 1, padding: spacing }]}>
-            <Text style={[styles.cardLabel, { fontSize: smallFontSize }]}>Food Orders</Text>
+          <View style={[styles.card, {
+            flex: 1,
+            padding: spacing,
+            backgroundColor: theme.bgCard,
+            borderColor: theme.glassBorder,
+          }]}>
+            <Text style={[styles.cardLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+              Food Orders
+            </Text>
             <View style={[styles.statusList, { marginTop: spacing }]}>
               <View style={styles.statusRow}>
-                <View style={[styles.statusDot, { backgroundColor: "#F59E0B" }]} />
-                <Text style={[styles.statusLabel, { fontSize: smallFontSize }]}>Pending</Text>
-                <Text style={[styles.statusValue, { fontSize: valueFontSize * 0.7 }]}>
+                <View style={[styles.statusDot, { backgroundColor: theme.warning }]} />
+                <Text style={[styles.statusLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                  Pending
+                </Text>
+                <Text style={[styles.statusValue, { fontSize: valueFontSize * 0.7, color: theme.textMain }]}>
                   {analytics.foodOrders.pending}
                 </Text>
               </View>
               <View style={styles.statusRow}>
-                <View style={[styles.statusDot, { backgroundColor: "#2563EB" }]} />
-                <Text style={[styles.statusLabel, { fontSize: smallFontSize }]}>Active</Text>
-                <Text style={[styles.statusValue, { fontSize: valueFontSize * 0.7 }]}>
+                <View style={[styles.statusDot, { backgroundColor: theme.primary }]} />
+                <Text style={[styles.statusLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                  Active
+                </Text>
+                <Text style={[styles.statusValue, { fontSize: valueFontSize * 0.7, color: theme.textMain }]}>
                   {analytics.foodOrders.accepted}
                 </Text>
               </View>
               <View style={styles.statusRow}>
-                <View style={[styles.statusDot, { backgroundColor: "#16A34A" }]} />
-                <Text style={[styles.statusLabel, { fontSize: smallFontSize }]}>Completed</Text>
-                <Text style={[styles.statusValue, { fontSize: valueFontSize * 0.7 }]}>
+                <View style={[styles.statusDot, { backgroundColor: theme.success }]} />
+                <Text style={[styles.statusLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                  Completed
+                </Text>
+                <Text style={[styles.statusValue, { fontSize: valueFontSize * 0.7, color: theme.textMain }]}>
                   {analytics.foodOrders.completed}
                 </Text>
               </View>
             </View>
           </View>
 
-          <View style={[styles.card, { flex: 1, padding: spacing }]}>
-            <Text style={[styles.cardLabel, { fontSize: smallFontSize }]}>Service Requests</Text>
+          <View style={[styles.card, {
+            flex: 1,
+            padding: spacing,
+            backgroundColor: theme.bgCard,
+            borderColor: theme.glassBorder,
+          }]}>
+            <Text style={[styles.cardLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+              Service Requests
+            </Text>
             <View style={[styles.statusList, { marginTop: spacing }]}>
               <View style={styles.statusRow}>
-                <View style={[styles.statusDot, { backgroundColor: "#F59E0B" }]} />
-                <Text style={[styles.statusLabel, { fontSize: smallFontSize }]}>Pending</Text>
-                <Text style={[styles.statusValue, { fontSize: valueFontSize * 0.7 }]}>
+                <View style={[styles.statusDot, { backgroundColor: theme.warning }]} />
+                <Text style={[styles.statusLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                  Pending
+                </Text>
+                <Text style={[styles.statusValue, { fontSize: valueFontSize * 0.7, color: theme.textMain }]}>
                   {analytics.serviceRequests.pending}
                 </Text>
               </View>
               <View style={styles.statusRow}>
-                <View style={[styles.statusDot, { backgroundColor: "#2563EB" }]} />
-                <Text style={[styles.statusLabel, { fontSize: smallFontSize }]}>In Progress</Text>
-                <Text style={[styles.statusValue, { fontSize: valueFontSize * 0.7 }]}>
+                <View style={[styles.statusDot, { backgroundColor: theme.primary }]} />
+                <Text style={[styles.statusLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                  In Progress
+                </Text>
+                <Text style={[styles.statusValue, { fontSize: valueFontSize * 0.7, color: theme.textMain }]}>
                   {analytics.serviceRequests.inProgress}
                 </Text>
               </View>
               <View style={styles.statusRow}>
-                <View style={[styles.statusDot, { backgroundColor: "#16A34A" }]} />
-                <Text style={[styles.statusLabel, { fontSize: smallFontSize }]}>Completed</Text>
-                <Text style={[styles.statusValue, { fontSize: valueFontSize * 0.7 }]}>
+                <View style={[styles.statusDot, { backgroundColor: theme.success }]} />
+                <Text style={[styles.statusLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                  Completed
+                </Text>
+                <Text style={[styles.statusValue, { fontSize: valueFontSize * 0.7, color: theme.textMain }]}>
                   {analytics.serviceRequests.completed}
                 </Text>
               </View>
@@ -733,8 +878,13 @@ export default function AnalyticsDashboard() {
         </View>
 
         {/* Peak Hours */}
-        <View style={[styles.card, { padding: spacing, marginBottom: gap }]}>
-          <Text style={[styles.cardLabel, { fontSize: smallFontSize, marginBottom: spacing }]}>
+        <View style={[styles.card, {
+          padding: spacing,
+          marginBottom: gap,
+          backgroundColor: theme.bgCard,
+          borderColor: theme.glassBorder,
+        }]}>
+          <Text style={[styles.cardLabel, { fontSize: smallFontSize, marginBottom: spacing, color: theme.textMuted }]}>
             Peak Order Times
           </Text>
           <View style={[styles.peakChart, { height: peakChartHeight }]}>
@@ -745,35 +895,46 @@ export default function AnalyticsDashboard() {
                     styles.peakBar,
                     {
                       height: (hour.orders / maxPeak) * (peakChartHeight - 20),
-                      backgroundColor: idx === 2 ? "#2563EB" : "rgba(37, 99, 235, 0.4)",
+                      backgroundColor: idx === 2 ? theme.primary : `${theme.primary}66`,
                     },
                   ]}
                 />
-                <Text style={[styles.peakLabel, { fontSize: smallFontSize - 1 }]}>{hour.hour}</Text>
+                <Text style={[styles.peakLabel, { fontSize: smallFontSize - 1, color: theme.textMuted }]}>
+                  {hour.hour}
+                </Text>
               </View>
             ))}
           </View>
         </View>
 
         {/* Top Items & Performance */}
-        <View style={[styles.rowGrid, { 
-          flexDirection: isSmall ? "column" : "row", 
-          gap, 
-          marginBottom: gap 
+        <View style={[styles.rowGrid, {
+          flexDirection: isSmall ? "column" : "row",
+          gap,
+          marginBottom: gap
         }]}>
-          <View style={[styles.card, { flex: 1, padding: spacing }]}>
-            <Text style={[styles.cardLabel, { fontSize: smallFontSize }]}>Top Items</Text>
+          <View style={[styles.card, {
+            flex: 1,
+            padding: spacing,
+            backgroundColor: theme.bgCard,
+            borderColor: theme.glassBorder,
+          }]}>
+            <Text style={[styles.cardLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+              Top Items
+            </Text>
             <View style={[styles.topList, { marginTop: spacing }]}>
               {analytics.topItems.slice(0, 3).map((item, idx) => (
                 <View key={idx} style={styles.topItemRow}>
-                  <View style={styles.topItemRank}>
-                    <Text style={[styles.topItemRankText, { fontSize: smallFontSize }]}>#{idx + 1}</Text>
+                  <View style={[styles.topItemRank, { backgroundColor: `${theme.primary}15` }]}>
+                    <Text style={[styles.topItemRankText, { fontSize: smallFontSize, color: theme.primary }]}>
+                      #{idx + 1}
+                    </Text>
                   </View>
                   <View style={styles.topItemInfo}>
-                    <Text style={[styles.topItemName, { fontSize: labelFontSize }]} numberOfLines={1}>
+                    <Text style={[styles.topItemName, { fontSize: labelFontSize, color: theme.textMain }]} numberOfLines={1}>
                       {item.name}
                     </Text>
-                    <Text style={[styles.topItemMeta, { fontSize: smallFontSize - 1 }]}>
+                    <Text style={[styles.topItemMeta, { fontSize: smallFontSize - 1, color: theme.textMuted }]}>
                       {item.count} orders • ₹{item.revenue.toLocaleString()}
                     </Text>
                   </View>
@@ -782,38 +943,51 @@ export default function AnalyticsDashboard() {
             </View>
           </View>
 
-          <View style={[styles.card, { flex: 1, padding: spacing }]}>
-            <Text style={[styles.cardLabel, { fontSize: smallFontSize }]}>Performance</Text>
+          <View style={[styles.card, {
+            flex: 1,
+            padding: spacing,
+            backgroundColor: theme.bgCard,
+            borderColor: theme.glassBorder,
+          }]}>
+            <Text style={[styles.cardLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+              Performance
+            </Text>
             <View style={[styles.performanceList, { marginTop: spacing }]}>
               <View style={styles.performanceRow}>
-                <View style={styles.performanceIcon}>
-                  <Ionicons name="timer" size={16} color="#2563EB" />
+                <View style={[styles.performanceIcon, { backgroundColor: `${theme.primary}15` }]}>
+                  <Ionicons name="timer" size={16} color={theme.primary} />
                 </View>
                 <View style={styles.performanceInfo}>
-                  <Text style={[styles.performanceLabel, { fontSize: smallFontSize }]}>Response Time</Text>
-                  <Text style={[styles.performanceValue, { fontSize: valueFontSize * 0.6 }]}>
+                  <Text style={[styles.performanceLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                    Response Time
+                  </Text>
+                  <Text style={[styles.performanceValue, { fontSize: valueFontSize * 0.6, color: theme.textMain }]}>
                     {analytics.avgResponseTime}m
                   </Text>
                 </View>
               </View>
               <View style={styles.performanceRow}>
-                <View style={styles.performanceIcon}>
-                  <Ionicons name="restaurant" size={16} color="#16A34A" />
+                <View style={[styles.performanceIcon, { backgroundColor: `${theme.success}15` }]}>
+                  <Ionicons name="restaurant" size={16} color={theme.success} />
                 </View>
                 <View style={styles.performanceInfo}>
-                  <Text style={[styles.performanceLabel, { fontSize: smallFontSize }]}>Prep Time</Text>
-                  <Text style={[styles.performanceValue, { fontSize: valueFontSize * 0.6 }]}>
+                  <Text style={[styles.performanceLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                    Prep Time
+                  </Text>
+                  <Text style={[styles.performanceValue, { fontSize: valueFontSize * 0.6, color: theme.textMain }]}>
                     {analytics.avgPreparationTime}m
                   </Text>
                 </View>
               </View>
               <View style={styles.performanceRow}>
-                <View style={styles.performanceIcon}>
+                <View style={[styles.performanceIcon, { backgroundColor: '#8B5CF615' }]}>
                   <Ionicons name="people" size={16} color="#8B5CF6" />
                 </View>
                 <View style={styles.performanceInfo}>
-                  <Text style={[styles.performanceLabel, { fontSize: smallFontSize }]}>Avg Stay</Text>
-                  <Text style={[styles.performanceValue, { fontSize: valueFontSize * 0.6 }]}>
+                  <Text style={[styles.performanceLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                    Avg Stay
+                  </Text>
+                  <Text style={[styles.performanceValue, { fontSize: valueFontSize * 0.6, color: theme.textMain }]}>
                     {analytics.avgStayDuration}h
                   </Text>
                 </View>
@@ -823,55 +997,68 @@ export default function AnalyticsDashboard() {
         </View>
 
         {/* Completion Rate & Occupancy */}
-        <View style={[styles.card, { padding: spacing, marginBottom: gap }]}>
+        <View style={[styles.card, {
+          padding: spacing,
+          marginBottom: gap,
+          backgroundColor: theme.bgCard,
+          borderColor: theme.glassBorder,
+        }]}>
           <View style={{ flexDirection: isSmall ? "column" : "row", justifyContent: "space-between", gap: spacing }}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.cardLabel, { fontSize: smallFontSize }]}>Service Completion</Text>
+              <Text style={[styles.cardLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                Service Completion
+              </Text>
               <View style={[styles.progressSection, { marginTop: spacing / 2 }]}>
                 <View style={styles.progressHeader}>
-                  <Text style={[styles.progressPercentage, { fontSize: valueFontSize }]}>
+                  <Text style={[styles.progressPercentage, { fontSize: valueFontSize, color: theme.primary }]}>
                     {analytics.completionRate}%
                   </Text>
-                  <Text style={[styles.progressStats, { fontSize: smallFontSize }]}>
+                  <Text style={[styles.progressStats, { fontSize: smallFontSize, color: theme.textMuted }]}>
                     {analytics.serviceRequests.completed} / {analytics.serviceRequests.total}
                   </Text>
                 </View>
-                <View style={styles.progressTrack}>
-                  <View 
+                <View style={[styles.progressTrack, { backgroundColor: theme.glass }]}>
+                  <View
                     style={[
-                      styles.progressFill, 
-                      { width: `${analytics.completionRate}%` }
-                    ]} 
+                      styles.progressFill,
+                      {
+                        width: `${analytics.completionRate}%`,
+                        backgroundColor: theme.primary
+                      }
+                    ]}
                   />
                 </View>
               </View>
             </View>
-            
-            <View style={[styles.divider, { 
-              width: isSmall ? "100%" : 1, 
-              height: isSmall ? 1 : "auto" 
+
+            <View style={[styles.divider, {
+              width: isSmall ? "100%" : 1,
+              height: isSmall ? 1 : "auto",
+              backgroundColor: theme.glassBorder,
             }]} />
-            
+
             <View style={{ flex: 1 }}>
-              <Text style={[styles.cardLabel, { fontSize: smallFontSize }]}>Room Occupancy</Text>
+              <Text style={[styles.cardLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                Room Occupancy
+              </Text>
               <View style={[styles.progressSection, { marginTop: spacing / 2 }]}>
                 <View style={styles.progressHeader}>
-                  <Text style={[styles.progressPercentage, { fontSize: valueFontSize }]}>
+                  <Text style={[styles.progressPercentage, { fontSize: valueFontSize, color: theme.success }]}>
                     {analytics.occupancyRate}%
                   </Text>
-                  <Text style={[styles.progressStats, { fontSize: smallFontSize }]}>
+                  <Text style={[styles.progressStats, { fontSize: smallFontSize, color: theme.textMuted }]}>
                     {analytics.activeRooms} / {analytics.totalRooms}
                   </Text>
                 </View>
-                <View style={styles.progressTrack}>
-                  <View 
+                <View style={[styles.progressTrack, { backgroundColor: theme.glass }]}>
+                  <View
                     style={[
-                      styles.progressFill, 
-                      { 
+                      styles.progressFill,
+                      {
                         width: `${analytics.occupancyRate}%`,
-                        backgroundColor: "#16A34A" 
+                        backgroundColor: theme.success
                       }
-                    ]} 
+                    ]}
                   />
                 </View>
               </View>
@@ -880,75 +1067,87 @@ export default function AnalyticsDashboard() {
         </View>
 
         {/* Summary Stats */}
-        <View style={[styles.card, { padding: spacing }]}>
-          <Text style={[styles.cardLabel, { fontSize: smallFontSize, marginBottom: spacing }]}>
+        <View style={[styles.card, {
+          padding: spacing,
+          backgroundColor: theme.bgCard,
+          borderColor: theme.glassBorder,
+        }]}>
+          <Text style={[styles.cardLabel, { fontSize: smallFontSize, marginBottom: spacing, color: theme.textMuted }]}>
             Summary
           </Text>
           <View style={[styles.summaryGrid, { gap }]}>
             <View style={styles.summaryItem}>
-              <Text style={[styles.summaryLabel, { fontSize: smallFontSize }]}>Total Orders</Text>
-              <Text style={[styles.summaryValue, { fontSize: valueFontSize * 0.7 }]}>
+              <Text style={[styles.summaryLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                Total Orders
+              </Text>
+              <Text style={[styles.summaryValue, { fontSize: valueFontSize * 0.7, color: theme.textMain }]}>
                 {analytics.totalOrders}
               </Text>
             </View>
             <View style={styles.summaryItem}>
-              <Text style={[styles.summaryLabel, { fontSize: smallFontSize }]}>Service Requests</Text>
-              <Text style={[styles.summaryValue, { fontSize: valueFontSize * 0.7 }]}>
+              <Text style={[styles.summaryLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                Service Requests
+              </Text>
+              <Text style={[styles.summaryValue, { fontSize: valueFontSize * 0.7, color: theme.textMain }]}>
                 {analytics.totalServiceRequests}
               </Text>
             </View>
             <View style={styles.summaryItem}>
-              <Text style={[styles.summaryLabel, { fontSize: smallFontSize }]}>Pending</Text>
-              <Text style={[styles.summaryValue, { fontSize: valueFontSize * 0.7, color: "#F59E0B" }]}>
+              <Text style={[styles.summaryLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                Pending
+              </Text>
+              <Text style={[styles.summaryValue, { fontSize: valueFontSize * 0.7, color: theme.warning }]}>
                 {analytics.pendingCount}
               </Text>
             </View>
             <View style={styles.summaryItem}>
-              <Text style={[styles.summaryLabel, { fontSize: smallFontSize }]}>Total Guests</Text>
-              <Text style={[styles.summaryValue, { fontSize: valueFontSize * 0.7 }]}>
+              <Text style={[styles.summaryLabel, { fontSize: smallFontSize, color: theme.textMuted }]}>
+                Total Guests
+              </Text>
+              <Text style={[styles.summaryValue, { fontSize: valueFontSize * 0.7, color: theme.textMain }]}>
                 {analytics.totalGuests}
               </Text>
             </View>
           </View>
         </View>
 
-      </ScrollView>
+      </Animated.ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F9FAFB" },
-  container: { flex: 1, backgroundColor: "#F9FAFB" },
+  safe: { flex: 1 },
+  container: { flex: 1 },
   content: {},
 
-  backgroundDecor: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
+  backgroundDecor: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: -1 },
   bgCircle1: {
     position: "absolute",
-    top: -100,
-    right: -60,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: "rgba(37, 99, 235, 0.08)",
+    top: -140,
+    right: -100,
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    opacity: 0.6,
   },
   bgCircle2: {
     position: "absolute",
-    top: 140,
-    left: -100,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: "rgba(37, 99, 235, 0.05)",
+    top: 200,
+    left: -140,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    opacity: 0.4,
   },
   bgCircle3: {
     position: "absolute",
-    bottom: 20,
-    right: -40,
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: "rgba(37, 99, 235, 0.06)",
+    bottom: -60,
+    right: -80,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    opacity: 0.3,
   },
 
   // Loading & Error
@@ -956,43 +1155,36 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#F9FAFB",
   },
   loadingText: {
     marginTop: 16,
     fontSize: 18,
     fontWeight: "700",
-    color: "#111827",
   },
   loadingSubtext: {
     marginTop: 8,
     fontSize: 14,
-    color: "#6B7280",
   },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
-    backgroundColor: "#F9FAFB",
   },
   errorText: {
     marginTop: 16,
     fontSize: 18,
     fontWeight: "700",
-    color: "#DC2626",
   },
   errorSubtext: {
     marginTop: 8,
     fontSize: 14,
-    color: "#6B7280",
     textAlign: "center",
   },
   retryButton: {
     marginTop: 24,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    backgroundColor: "#2563EB",
     borderRadius: 12,
   },
   retryText: {
@@ -1006,23 +1198,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  greeting: { color: "#6B7280", fontWeight: "600", letterSpacing: 0.5 },
-  title: { fontWeight: "700", color: "#111827", marginTop: 2 },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 12 },
+  greeting: { fontWeight: "600", letterSpacing: 0.5 },
+  title: { fontWeight: "700", marginTop: 2 },
+
+  themeToggle: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+  },
+
   badge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(37, 99, 235, 0.1)",
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 16,
     gap: 4,
   },
-  badgeText: { color: "#2563EB", fontWeight: "700", fontSize: 9, letterSpacing: 0.8 },
+  badgeText: { fontWeight: "700", fontSize: 9, letterSpacing: 0.8 },
 
   timeRangeContainer: {
     flexDirection: "row",
     gap: 8,
-    backgroundColor: "#FFFFFF",
     padding: 4,
     borderRadius: 12,
     shadowColor: "#000",
@@ -1030,36 +1231,36 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 4,
+    borderWidth: 1.5,
   },
   timeRangeButton: { flex: 1, borderRadius: 8, alignItems: "center" },
   timeRangeButtonActive: { backgroundColor: "#2563EB" },
-  timeRangeText: { fontWeight: "600", color: "#6B7280" },
+  timeRangeText: { fontWeight: "600" },
   timeRangeTextActive: { color: "#FFFFFF" },
 
   card: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 4,
+    borderWidth: 1.5,
   },
 
-  cardHeader: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    justifyContent: "space-between", 
-    marginBottom: 12 
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12
   },
-  cardLabel: { 
-    fontWeight: "600", 
-    color: "#6B7280", 
+  cardLabel: {
+    fontWeight: "600",
     marginBottom: 4,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  revenueValue: { fontWeight: "800", color: "#111827" },
+  revenueValue: { fontWeight: "800" },
   changeIndicator: {
     flexDirection: "row",
     alignItems: "center",
@@ -1070,32 +1271,30 @@ const styles = StyleSheet.create({
   },
   changeText: { fontWeight: "700" },
 
-  chart: { 
-    flexDirection: "row", 
-    alignItems: "flex-end", 
-    justifyContent: "space-around" 
+  chart: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-around"
   },
-  chartBarWrapper: { 
-    flex: 1, 
-    alignItems: "center", 
-    justifyContent: "flex-end" 
+  chartBarWrapper: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "flex-end"
   },
-  chartBar: { 
-    width: "55%", 
-    borderRadius: 6 
+  chartBar: {
+    width: "55%",
+    borderRadius: 6
   },
-  chartLabel: { 
-    color: "#9CA3AF", 
-    fontWeight: "600", 
-    marginTop: 4 
+  chartLabel: {
+    fontWeight: "600",
+    marginTop: 4
   },
 
-  metricsGrid: { 
-    flexDirection: "row", 
-    flexWrap: "wrap" 
+  metricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap"
   },
   metricCard: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 12,
     alignItems: "center",
@@ -1104,27 +1303,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 6,
     elevation: 3,
+    borderWidth: 1.5,
   },
-  metricIconWrap: { 
-    width: 36, 
-    height: 36, 
-    borderRadius: 18, 
-    alignItems: "center", 
-    justifyContent: "center", 
-    marginBottom: 6 
+  metricIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6
   },
-  metricValue: { 
-    fontWeight: "800", 
-    color: "#111827", 
-    marginBottom: 2 
+  metricValue: {
+    fontWeight: "800",
+    marginBottom: 2
   },
-  metricLabel: { 
-    color: "#6B7280", 
-    fontWeight: "600" 
+  metricLabel: {
+    fontWeight: "600"
   },
 
-  rowGrid: { 
-    alignItems: "stretch" 
+  rowGrid: {
+    alignItems: "stretch"
   },
 
   // Status Lists
@@ -1143,12 +1341,10 @@ const styles = StyleSheet.create({
   },
   statusLabel: {
     flex: 1,
-    color: "#6B7280",
     fontWeight: "600",
   },
   statusValue: {
     fontWeight: "800",
-    color: "#111827",
   },
 
   // Top Items
@@ -1164,23 +1360,19 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 8,
-    backgroundColor: "rgba(37, 99, 235, 0.1)",
     alignItems: "center",
     justifyContent: "center",
   },
   topItemRankText: {
     fontWeight: "900",
-    color: "#2563EB",
   },
   topItemInfo: {
     flex: 1,
   },
   topItemName: {
     fontWeight: "700",
-    color: "#111827",
   },
   topItemMeta: {
-    color: "#6B7280",
     marginTop: 2,
   },
 
@@ -1197,7 +1389,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: "rgba(37, 99, 235, 0.1)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1205,33 +1396,30 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   performanceLabel: {
-    color: "#6B7280",
     fontWeight: "600",
   },
   performanceValue: {
     fontWeight: "800",
-    color: "#111827",
     marginTop: 2,
   },
 
   // Peak Hours
-  peakChart: { 
-    flexDirection: "row", 
-    alignItems: "flex-end", 
-    justifyContent: "space-around" 
+  peakChart: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-around"
   },
-  peakBarWrapper: { 
-    alignItems: "center", 
-    flex: 1 
+  peakBarWrapper: {
+    alignItems: "center",
+    flex: 1
   },
-  peakBar: { 
-    width: "55%", 
-    borderRadius: 4 
+  peakBar: {
+    width: "55%",
+    borderRadius: 4
   },
-  peakLabel: { 
-    color: "#9CA3AF", 
-    fontWeight: "600", 
-    marginTop: 3 
+  peakLabel: {
+    fontWeight: "600",
+    marginTop: 3
   },
 
   // Progress
@@ -1246,21 +1434,17 @@ const styles = StyleSheet.create({
   },
   progressPercentage: {
     fontWeight: "900",
-    color: "#2563EB",
   },
   progressStats: {
-    color: "#6B7280",
     fontWeight: "600",
   },
   progressTrack: {
     height: 8,
-    backgroundColor: "#F3F4F6",
     borderRadius: 4,
     overflow: "hidden",
   },
   progressFill: {
     height: "100%",
-    backgroundColor: "#2563EB",
     borderRadius: 4,
   },
 
@@ -1279,12 +1463,10 @@ const styles = StyleSheet.create({
     minWidth: "45%",
   },
   summaryLabel: {
-    color: "#6B7280",
     fontWeight: "600",
     marginBottom: 4,
   },
   summaryValue: {
     fontWeight: "800",
-    color: "#111827",
   },
 });
