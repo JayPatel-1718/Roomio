@@ -12,7 +12,7 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
 } from "react-native";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   collection,
   onSnapshot,
@@ -24,7 +24,6 @@ import {
   getDocs,
   serverTimestamp,
   writeBatch,
-  deleteDoc,
   addDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
@@ -33,89 +32,16 @@ import { getAuth } from "firebase/auth";
 import { useRouter } from "expo-router";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 
-type Meal = "breakfast" | "lunch" | "dinner";
-
 type Room = {
   id: string;
   roomNumber: number;
+  floorNumber?: number;
   status: "occupied" | "available";
-  guestName?: string;
-  guestMobile?: string;
-  checkoutAt?: Timestamp;
-  guestId?: string;
-  mealPlan?: Meal[];
-  assignedAt?: Timestamp;
-};
-
-type FoodOrder = {
-  id: string;
-  roomNumber?: number | string;
-  guestName?: string;
-  guestMobile?: string;
-  guestId?: string;
-  items?:
-  | Array<{
-    name?: string;
-    item?: string;
-    title?: string;
-    qty?: number;
-    quantity?: number;
-    price?: number;
-    unitPrice?: number;
-    rate?: number;
-    lineTotal?: number;
-    total?: number;
-    amount?: number;
-  }>
-  | Record<string, any>;
-  item?: string;
-  qty?: number;
-  quantity?: number;
-  price?: any;
-  subtotal?: any;
-  total?: any;
-  amount?: any;
-  totalPrice?: any;
-  totalAmount?: any;
-  grandTotal?: any;
-  finalTotal?: any;
-  finalAmount?: any;
-  payable?: any;
-  status?: string;
-  createdAt?: any;
-  source?: string;
-  adminId?: string;
-  estimatedTime?: number;
-  acceptedAt?: Timestamp;
-  completedAt?: Timestamp;
-  readyAt?: Timestamp;
-  sourceOrderId?: string;
-};
-
-type ServiceRequest = {
-  id: string;
-  adminId?: string;
-  type?: string;
-  roomNumber?: number | string;
-  guestName?: string;
-  guestMobile?: string;
-  status?: string;
-  charges?: number;
-  currency?: string;
-  isFreeRequest?: boolean;
-  requestNumber?: number;
-  estimatedTime?: number;
-  acceptedAt?: Timestamp;
-  completedAt?: Timestamp;
-  createdAt?: Timestamp;
-  updatedAt?: Timestamp;
-  source?: string;
-  notes?: string;
-  dishName?: string;
-  orderDetails?: any[];
-  totalAmount?: number;
-  foodOrderId?: string;
-  sourceOrderId?: string;
+  guestName?: string | null;
+  guestMobile?: string | null;
+  checkoutAt?: Timestamp | null;
+  guestId?: string | null;
+  assignedAt?: Timestamp | null;
 };
 
 type ConfirmState = {
@@ -127,48 +53,50 @@ type ConfirmState = {
   onConfirm?: () => void | Promise<void>;
 };
 
+const padRoom = (n: number) => (n < 100 ? String(n).padStart(3, "0") : String(n));
+
+const getFloorFromRoom = (r: Room) => {
+  if (typeof r.floorNumber === "number") return r.floorNumber;
+  return r.roomNumber >= 100 ? Math.floor(r.roomNumber / 100) : 0;
+};
+
+const floorLabel = (floor: number) => (floor === 0 ? "Ground Floor" : `Floor ${floor}`);
+
 export default function RoomsScreen() {
   const auth = getAuth();
   const user = auth.currentUser;
   const router = useRouter();
 
-  const [occupiedRooms, setOccupiedRooms] = useState<Room[]>([]);
-  const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
-  const [foodOrders, setFoodOrders] = useState<FoodOrder[]>([]);
-  const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
-  const [logsOpen, setLogsOpen] = useState(false);
-  const [logsRoomNumber, setLogsRoomNumber] = useState<number | null>(null);
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
-  const [logsType, setLogsType] = useState<"food" | "services">("food");
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deleting, setDeleting] = useState(false);
 
-  // Search and Edit Room State
+  // Search
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Floor expand state
+  const [openFloors, setOpenFloors] = useState<Record<number, boolean>>({});
+
+  // Edit/Init Room modal
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [guestName, setGuestName] = useState("");
   const [guestMobile, setGuestMobile] = useState("");
-
-  // ✅ Add check-in + check-out pickers (like previous screen)
-  const [editCheckinDate, setEditCheckinDate] = useState<Date | null>(new Date());
-  const [checkoutDate, setCheckoutDate] = useState<Date | null>(() => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(11, 0, 0, 0);
-    return tomorrow;
+  const [editCheckinDate, setEditCheckinDate] = useState<Date>(new Date());
+  const [checkoutDate, setCheckoutDate] = useState<Date>(() => {
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    t.setHours(11, 0, 0, 0);
+    return t;
   });
+  const [initializing, setInitializing] = useState(false);
 
-  // iOS picker modals inside Edit Room modal
+  // iOS picker modals
   const [showEditCheckinPicker, setShowEditCheckinPicker] = useState(false);
   const [showEditCheckoutPicker, setShowEditCheckoutPicker] = useState(false);
   const [iosTempEditCheckin, setIosTempEditCheckin] = useState<Date>(new Date());
   const [iosTempEditCheckout, setIosTempEditCheckout] = useState<Date>(new Date());
 
-  const [initializing, setInitializing] = useState(false);
-
-  // ✅ Web confirm modal (fixes multi-button Alert on web; also fixes checkout on web)
+  // Web confirm modal
   const [confirm, setConfirm] = useState<ConfirmState>({
     open: false,
     title: "",
@@ -178,120 +106,6 @@ export default function RoomsScreen() {
   });
   const [confirmBusy, setConfirmBusy] = useState(false);
 
-  const occupiedRoomsRef = useRef<Room[]>([]);
-  useEffect(() => {
-    occupiedRoomsRef.current = occupiedRooms;
-  }, [occupiedRooms]);
-
-  // ---------- Date helpers (shared) ----------
-  const pad2 = (n: number) => String(n).padStart(2, "0");
-
-  const formatDateTimeLocal = (d: Date) => {
-    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(
-      d.getHours()
-    )}:${pad2(d.getMinutes())}`;
-  };
-
-  const parseDateTimeLocal = (val: string) => {
-    try {
-      const [datePart, timePart] = val.split("T");
-      if (!datePart || !timePart) return null;
-      const [y, m, day] = datePart.split("-").map(Number);
-      const [hh, mm] = timePart.split(":").map(Number);
-      if (!y || !m || !day || Number.isNaN(hh) || Number.isNaN(mm)) return null;
-      return new Date(y, m - 1, day, hh, mm, 0, 0);
-    } catch {
-      return null;
-    }
-  };
-
-  const formatDateDisplay = (date: Date | null) => {
-    if (!date) return "Select date & time";
-    return date.toLocaleString([], {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  // ✅ Android: show Date picker then Time picker (reliable)
-  const openAndroidDateTimePicker = ({
-    initial,
-    minimumDate,
-    onPicked,
-    onDone,
-  }: {
-    initial: Date;
-    minimumDate?: Date;
-    onPicked: (d: Date) => void;
-    onDone?: () => void;
-  }) => {
-    DateTimePickerAndroid.open({
-      value: initial,
-      mode: "date",
-      minimumDate,
-      onChange: (event, date) => {
-        if (event.type !== "set" || !date) {
-          onDone?.();
-          return;
-        }
-
-        const pickedDate = new Date(date);
-
-        DateTimePickerAndroid.open({
-          value: pickedDate,
-          mode: "time",
-          onChange: (event2, time) => {
-            onDone?.();
-            if (event2.type !== "set" || !time) return;
-
-            const finalDate = new Date(pickedDate);
-            finalDate.setHours(time.getHours(), time.getMinutes(), 0, 0);
-            onPicked(finalDate);
-          },
-        });
-      },
-    });
-  };
-
-  // Web input style for real HTML datetime picker
-  const webNativeDateInputStyle: any = {
-    flex: 1,
-    minWidth: 0,
-    height: 48,
-    border: "none",
-    outline: "none",
-    background: "transparent",
-    padding: "12px 12px",
-    fontSize: 15,
-    color: "#111827",
-    fontWeight: 600,
-    cursor: "pointer",
-  };
-
-  // Improve web datetime indicator
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-    const style = document.createElement("style");
-    style.textContent = `
-      input[type="datetime-local"] {
-        color-scheme: light;
-        accent-color: #2563EB;
-      }
-      input[type="datetime-local"]::-webkit-calendar-picker-indicator {
-        cursor: pointer;
-        opacity: 0.8;
-      }
-      input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
-        opacity: 1;
-      }
-    `;
-    document.head.appendChild(style);
-    return () => document.head.removeChild(style);
-  }, []);
-
-  // ✅ Web-safe confirm (replaces multi-button Alert on web)
   const askConfirm = (cfg: Omit<ConfirmState, "open">) => {
     if (Platform.OS !== "web") {
       Alert.alert(cfg.title, cfg.message, [
@@ -312,6 +126,37 @@ export default function RoomsScreen() {
     setConfirmBusy(false);
   };
 
+  // Web datetime-local helpers
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const formatDateTimeLocal = (d: Date) =>
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+
+  const parseDateTimeLocal = (val: string) => {
+    try {
+      const [datePart, timePart] = val.split("T");
+      if (!datePart || !timePart) return null;
+      const [y, m, day] = datePart.split("-").map(Number);
+      const [hh, mm] = timePart.split(":").map(Number);
+      return new Date(y, m - 1, day, hh, mm, 0, 0);
+    } catch {
+      return null;
+    }
+  };
+
+  const webNativeDateInputStyle: any = {
+    flex: 1,
+    minWidth: 0,
+    height: 48,
+    border: "none",
+    outline: "none",
+    background: "transparent",
+    padding: "12px 12px",
+    fontSize: 15,
+    color: "#111827",
+    fontWeight: 700,
+    cursor: "pointer",
+  };
+
   useEffect(() => {
     if (!user) {
       Alert.alert("Please login first", "You need to be logged in to view rooms");
@@ -322,258 +167,70 @@ export default function RoomsScreen() {
     const uid = user.uid;
     setLoading(true);
 
-    // 1️⃣ Rooms listener
     const roomsRef = collection(db, "users", uid, "rooms");
     const unsubRooms = onSnapshot(
       roomsRef,
       (snap) => {
-        const occupied: Room[] = [];
-        const available: Room[] = [];
+        const all: Room[] = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as any),
+        }));
 
-        snap.docs.forEach((docSnap) => {
-          const data = docSnap.data();
-          const room: Room = { id: docSnap.id, ...(data as any) };
-          if (room.status === "occupied") occupied.push(room);
-          else available.push(room);
-        });
+        all.sort((a, b) => a.roomNumber - b.roomNumber);
+        setRooms(all);
+        setLoading(false);
 
-        occupied.sort((a, b) => a.roomNumber - b.roomNumber);
-        available.sort((a, b) => a.roomNumber - b.roomNumber);
-
-        setOccupiedRooms(occupied);
-        setAvailableRooms(available);
-        occupiedRoomsRef.current = occupied;
+        // Auto open first available floor in UI
+        const floors = Array.from(new Set(all.map((r) => getFloorFromRoom(r)))).sort((a, b) => a - b);
+        if (floors.length) {
+          setOpenFloors((prev) => {
+            if (Object.keys(prev).length) return prev;
+            return { [floors[0]]: true };
+          });
+        }
       },
       (err) => {
         console.error("Rooms listener error:", err);
         Alert.alert("Error", "Failed to load rooms: " + err.message);
-      }
-    );
-
-    // 2️⃣ Food Orders listener
-    const foodOrdersRef = collection(db, "foodOrders");
-    const foodOrdersQuery = query(foodOrdersRef, where("adminId", "==", uid));
-
-    const unsubFoodOrders = onSnapshot(
-      foodOrdersQuery,
-      (snap) => {
-        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as FoodOrder[];
-        items.sort((a: any, b: any) => {
-          const aTime = a.createdAt?.toMillis?.() || 0;
-          const bTime = b.createdAt?.toMillis?.() || 0;
-          return bTime - aTime;
-        });
-        setFoodOrders(items);
-      },
-      (err) => {
-        console.error("Food orders listener error:", err);
-        Alert.alert(
-          "Food Orders Error",
-          `Cannot read food orders: ${err.message}\n\nCheck permissions for /foodOrders.`
-        );
-      }
-    );
-
-    // 3️⃣ Service Requests listener
-    const serviceRequestsRef = collection(db, "serviceRequests");
-    const serviceRequestsQuery = query(serviceRequestsRef, where("adminId", "==", uid));
-
-    const unsubServiceRequests = onSnapshot(
-      serviceRequestsQuery,
-      (snap) => {
-        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as ServiceRequest[];
-
-        items.sort((a: any, b: any) => {
-          const aTime = a.createdAt?.toMillis?.() || a.updatedAt?.toMillis?.() || 0;
-          const bTime = b.createdAt?.toMillis?.() || b.updatedAt?.toMillis?.() || 0;
-          return bTime - aTime;
-        });
-
-        setServiceRequests(items);
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Service requests listener error:", err);
-        Alert.alert(
-          "Service Requests Error",
-          `Cannot read service requests: ${err.message}\n\nCheck permissions for /serviceRequests.`
-        );
         setLoading(false);
       }
     );
 
-    return () => {
-      unsubRooms();
-      unsubFoodOrders();
-      unsubServiceRequests();
-    };
+    return () => unsubRooms();
   }, [user, router]);
 
-  // Clear selection when order/request removed
-  useEffect(() => {
-    if (!selectedOrderId) return;
-    const stillExists = foodOrders.some((o) => o.id === selectedOrderId);
-    if (!stillExists) setSelectedOrderId(null);
-  }, [foodOrders, selectedOrderId]);
-
-  useEffect(() => {
-    if (!selectedRequestId) return;
-    const stillExists = serviceRequests.some((r) => r.id === selectedRequestId);
-    if (!stillExists) setSelectedRequestId(null);
-  }, [serviceRequests, selectedRequestId]);
-
-  // Get food orders for a specific room - ONLY for CURRENT guest assignment window
-  const getCurrentGuestFoodOrders = (
-    roomNumber: number,
-    _currentGuestId?: string,
-    roomAssignedAt?: Timestamp
-  ) => {
-    return foodOrders.filter((o) => {
-      if (String(o.roomNumber ?? "") !== String(roomNumber)) return false;
-
-      if (roomAssignedAt && o.createdAt) {
-        const orderTime = o.createdAt?.toMillis?.() || 0;
-        const roomAssignedTime = roomAssignedAt.toMillis();
-        if (orderTime < roomAssignedTime) return false;
-      }
-
-      return true;
+  const filteredRooms = useMemo(() => {
+    const q = (searchQuery || "").trim();
+    if (!q) return rooms;
+    return rooms.filter((r) => {
+      const disp = padRoom(r.roomNumber);
+      return disp.includes(q) || String(r.roomNumber).includes(q);
     });
-  };
+  }, [rooms, searchQuery]);
 
-  const getServiceRequestsForRoom = (roomNumber: number, roomAssignedAt?: Timestamp) => {
-    return serviceRequests.filter((r) => {
-      if (String(r.roomNumber ?? "") !== String(roomNumber)) return false;
-
-      if (roomAssignedAt && r.createdAt) {
-        const requestTime = r.createdAt?.toMillis?.() || 0;
-        const roomAssignedTime = roomAssignedAt.toMillis();
-        if (requestTime < roomAssignedTime) return false;
-      }
-
-      return true;
-    });
-  };
-
-  const foodCountForRoom = (roomNumber: number, guestId?: string, roomAssignedAt?: Timestamp) =>
-    getCurrentGuestFoodOrders(roomNumber, guestId, roomAssignedAt).length;
-
-  const serviceCountForRoom = (roomNumber: number, roomAssignedAt?: Timestamp) =>
-    getServiceRequestsForRoom(roomNumber, roomAssignedAt).length;
-
-  const serviceChargesForRoom = (roomNumber: number, roomAssignedAt?: Timestamp) => {
-    const requests = getServiceRequestsForRoom(roomNumber, roomAssignedAt);
-    return requests.reduce((sum, r) => sum + (r.charges || 0), 0);
-  };
-
-  // Format INR currency
-  const formatINR = (amount: number) => {
-    const safe = Number.isFinite(amount) ? amount : 0;
-    return `₹${safe.toLocaleString("en-IN")}`;
-  };
-
-  // Convert any value to number
-  const toNum = (v: any): number => {
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-    if (typeof v === "string") {
-      const cleaned = v.replace(/[^0-9.]/g, "");
-      const n = parseFloat(cleaned);
-      return Number.isFinite(n) ? n : 0;
+  const floors = useMemo(() => {
+    const map = new Map<number, Room[]>();
+    for (const r of filteredRooms) {
+      const f = getFloorFromRoom(r);
+      if (!map.has(f)) map.set(f, []);
+      map.get(f)!.push(r);
     }
-    return 0;
-  };
+    return Array.from(map.entries()).sort((a, b) => a[0] - b[0]);
+  }, [filteredRooms]);
 
-  // Normalize items array
-  const normalizeItems = (items: any): any[] => {
-    if (!items) return [];
-    if (Array.isArray(items)) return items;
-    if (typeof items === "object") return Object.values(items);
-    return [];
-  };
+  const occupiedCount = useMemo(() => rooms.filter((r) => r.status === "occupied").length, [rooms]);
+  const availableCount = useMemo(() => rooms.filter((r) => r.status === "available").length, [rooms]);
 
-  // Get order line title
-  const orderLineTitle = (i: any) => i?.name || i?.item || i?.title || "Item";
-
-  // Calculate order total
-  const getOrderTotal = (o: FoodOrder) => {
-    const directTotal =
-      toNum((o as any).total) ||
-      toNum((o as any).subtotal) ||
-      toNum((o as any).amount) ||
-      toNum((o as any).totalPrice) ||
-      toNum((o as any).totalAmount) ||
-      toNum((o as any).grandTotal) ||
-      toNum((o as any).finalTotal) ||
-      toNum((o as any).finalAmount) ||
-      toNum((o as any).payable) ||
-      toNum((o as any).price);
-
-    if (directTotal > 0) return directTotal;
-
-    const items = normalizeItems((o as any).items);
-    if (items.length) {
-      return items.reduce((sum, it) => {
-        const line = toNum(it?.lineTotal) || toNum(it?.total) || toNum(it?.amount);
-        if (line > 0) return sum + line;
-
-        const qty = toNum(it?.qty) || toNum(it?.quantity) || 1;
-        const price = toNum(it?.price) || toNum(it?.unitPrice) || toNum(it?.rate) || 0;
-        return sum + qty * price;
-      }, 0);
-    }
-
-    const qty = toNum((o as any).qty) || toNum((o as any).quantity) || 1;
-    const price = toNum((o as any).price) || toNum((o as any).unitPrice) || 0;
-    return qty * price;
-  };
-
-  const totalForRoom = (roomNumber: number, guestId?: string, roomAssignedAt?: Timestamp) => {
-    const orders = getCurrentGuestFoodOrders(roomNumber, guestId, roomAssignedAt);
-    return orders.reduce((sum, o) => sum + getOrderTotal(o), 0);
-  };
-
-  const totalChargesForRoom = (roomNumber: number, guestId?: string, roomAssignedAt?: Timestamp) => {
-    const foodTotal = totalForRoom(roomNumber, guestId, roomAssignedAt);
-    const serviceTotal = serviceChargesForRoom(roomNumber, roomAssignedAt);
-    return foodTotal + serviceTotal;
-  };
-
-  // Filter food orders for logs modal
-  const filteredFoodOrders = useMemo(() => {
-    if (logsRoomNumber == null) return foodOrders;
-    return foodOrders.filter((o) => String(o.roomNumber ?? "") === String(logsRoomNumber));
-  }, [foodOrders, logsRoomNumber]);
-
-  // Filter service requests for logs modal
-  const filteredServiceRequests = useMemo(() => {
-    if (logsRoomNumber == null) return serviceRequests;
-    return serviceRequests.filter((r) => String(r.roomNumber ?? "") === String(logsRoomNumber));
-  }, [serviceRequests, logsRoomNumber]);
-
-  // Filtered Rooms including Search
-  const filteredOccupiedRooms = useMemo(() => {
-    if (!searchQuery) return occupiedRooms;
-    return occupiedRooms.filter((r) => String(r.roomNumber).includes(searchQuery));
-  }, [occupiedRooms, searchQuery]);
-
-  const filteredAvailableRooms = useMemo(() => {
-    if (!searchQuery) return availableRooms;
-    return availableRooms.filter((r) => String(r.roomNumber).includes(searchQuery));
-  }, [availableRooms, searchQuery]);
-
-  // Handle Edit Room (Initialize)
   const openEditModal = (room: Room) => {
     setEditingRoom(room);
     setGuestName("");
     setGuestMobile("");
+    setEditCheckinDate(new Date());
 
-    const now = new Date();
-    setEditCheckinDate(now);
-
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(11, 0, 0, 0);
-    setCheckoutDate(tomorrow);
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    t.setHours(11, 0, 0, 0);
+    setCheckoutDate(t);
 
     setEditModalOpen(true);
   };
@@ -583,10 +240,39 @@ export default function RoomsScreen() {
     setEditingRoom(null);
     setGuestName("");
     setGuestMobile("");
-    setEditCheckinDate(new Date());
-    setCheckoutDate(null);
     setShowEditCheckinPicker(false);
     setShowEditCheckoutPicker(false);
+  };
+
+  const openAndroidDateTimePicker = ({
+    initial,
+    minimumDate,
+    onPicked,
+  }: {
+    initial: Date;
+    minimumDate?: Date;
+    onPicked: (d: Date) => void;
+  }) => {
+    DateTimePickerAndroid.open({
+      value: initial,
+      mode: "date",
+      minimumDate,
+      onChange: (event, date) => {
+        if (event.type !== "set" || !date) return;
+        const pickedDate = new Date(date);
+
+        DateTimePickerAndroid.open({
+          value: pickedDate,
+          mode: "time",
+          onChange: (event2, time) => {
+            if (event2.type !== "set" || !time) return;
+            const finalDate = new Date(pickedDate);
+            finalDate.setHours(time.getHours(), time.getMinutes(), 0, 0);
+            onPicked(finalDate);
+          },
+        });
+      },
+    });
   };
 
   const saveRoomDetails = async () => {
@@ -596,37 +282,24 @@ export default function RoomsScreen() {
       Alert.alert("Invalid Name", "Guest name is required");
       return;
     }
-
     if (!/^[0-9]{10}$/.test(guestMobile)) {
       Alert.alert("Invalid Mobile", "Mobile number must be exactly 10 digits");
       return;
     }
-
-    if (!editCheckinDate || !checkoutDate) {
-      Alert.alert("Invalid Dates", "Please select both check-in and check-out date & time");
-      return;
-    }
-
     if (checkoutDate <= editCheckinDate) {
       Alert.alert("Invalid Dates", "Checkout must be after check-in time");
-      return;
-    }
-
-    if (checkoutDate <= new Date()) {
-      Alert.alert("Invalid Checkout", "Checkout must be in the future");
       return;
     }
 
     setInitializing(true);
     try {
       const uid = user.uid;
-      const currentUserEmail = user.email;
 
-      // 1. Create Guest Record
-      const guestData: any = {
+      // create guest record
+      const guestRef = await addDoc(collection(db, "guests"), {
         adminId: uid,
-        adminEmail: currentUserEmail,
-        guestMobile: guestMobile,
+        adminEmail: user.email,
+        guestMobile,
         guestName: guestName.trim(),
         roomNumber: editingRoom.roomNumber,
         isActive: true,
@@ -635,438 +308,106 @@ export default function RoomsScreen() {
         checkinAt: Timestamp.fromDate(editCheckinDate),
         checkoutAt: Timestamp.fromDate(checkoutDate),
         mealPlan: [],
-      };
+      });
 
-      const guestRef = await addDoc(collection(db, "guests"), guestData);
-
-      // 2. Update Room
-      const roomRef = doc(db, "users", uid, "rooms", editingRoom.id);
-
-      await updateDoc(roomRef, {
+      // update room
+      await updateDoc(doc(db, "users", uid, "rooms", editingRoom.id), {
         status: "occupied",
         guestName: guestName.trim(),
-        guestMobile: guestMobile,
-        assignedAt: Timestamp.fromDate(editCheckinDate), // ✅ use selected check-in time
+        guestMobile,
+        assignedAt: Timestamp.fromDate(editCheckinDate),
         checkoutAt: Timestamp.fromDate(checkoutDate),
         guestId: guestRef.id,
-        adminEmail: currentUserEmail,
         updatedAt: serverTimestamp(),
       });
 
-      Alert.alert("✅ Success", `Room ${editingRoom.roomNumber} initialized for ${guestName}`);
+      Alert.alert("✅ Success", `Room ${padRoom(editingRoom.roomNumber)} initialized for ${guestName}`);
       closeEditModal();
-    } catch (error: any) {
-      console.error("Error initializing room:", error);
-      Alert.alert("❌ Error", "Failed to initialize room: " + error.message);
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert("Error", e?.message || "Failed to initialize room");
     } finally {
       setInitializing(false);
     }
   };
 
-  // ✅ DELETE ALL FOOD ORDERS
-  const deleteAllFoodOrders = async () => {
-    if (!user) return;
-    if (filteredFoodOrders.length === 0) {
-      Alert.alert("No Orders", "There are no food orders to delete.");
-      return;
-    }
-
-    askConfirm({
-      title: "Delete All Food Orders",
-      message: `Are you sure you want to delete ALL ${filteredFoodOrders.length} food orders${logsRoomNumber ? ` for Room ${logsRoomNumber}` : ""
-        }?\n\nThis action CANNOT be undone.`,
-      confirmText: deleting ? "Deleting..." : "Delete All",
-      variant: "destructive",
-      onConfirm: async () => {
-        setDeleting(true);
-        try {
-          const batch = writeBatch(db);
-          const uid = user.uid;
-
-          let ordersQuery;
-          if (logsRoomNumber) {
-            ordersQuery = query(
-              collection(db, "foodOrders"),
-              where("adminId", "==", uid),
-              where("roomNumber", "==", logsRoomNumber)
-            );
-          } else {
-            ordersQuery = query(collection(db, "foodOrders"), where("adminId", "==", uid));
-          }
-
-          const ordersSnapshot = await getDocs(ordersQuery);
-          ordersSnapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
-          await batch.commit();
-
-          Alert.alert("✅ Success", `Deleted ${ordersSnapshot.size} food orders successfully.`);
-          if (selectedOrderId) {
-            const stillExists = foodOrders.some((o) => o.id === selectedOrderId);
-            if (!stillExists) setSelectedOrderId(null);
-          }
-        } catch (e: any) {
-          console.error("Delete all food orders error:", e);
-          Alert.alert("❌ Error", "Failed to delete food orders: " + e.message);
-        } finally {
-          setDeleting(false);
-        }
-      },
-    });
-  };
-
-  // ✅ DELETE ALL SERVICE REQUESTS
-  const deleteAllServiceRequests = async () => {
-    if (!user) return;
-    if (filteredServiceRequests.length === 0) {
-      Alert.alert("No Requests", "There are no service requests to delete.");
-      return;
-    }
-
-    askConfirm({
-      title: "Delete All Service Requests",
-      message: `Are you sure you want to delete ALL ${filteredServiceRequests.length} service requests${logsRoomNumber ? ` for Room ${logsRoomNumber}` : ""
-        }?\n\nThis action CANNOT be undone.`,
-      confirmText: deleting ? "Deleting..." : "Delete All",
-      variant: "destructive",
-      onConfirm: async () => {
-        setDeleting(true);
-        try {
-          const batch = writeBatch(db);
-          const uid = user.uid;
-
-          let requestsQuery;
-          if (logsRoomNumber) {
-            requestsQuery = query(
-              collection(db, "serviceRequests"),
-              where("adminId", "==", uid),
-              where("roomNumber", "==", logsRoomNumber)
-            );
-          } else {
-            requestsQuery = query(collection(db, "serviceRequests"), where("adminId", "==", uid));
-          }
-
-          const requestsSnapshot = await getDocs(requestsQuery);
-          requestsSnapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
-          await batch.commit();
-
-          Alert.alert("✅ Success", `Deleted ${requestsSnapshot.size} service requests successfully.`);
-          if (selectedRequestId) {
-            const stillExists = serviceRequests.some((r) => r.id === selectedRequestId);
-            if (!stillExists) setSelectedRequestId(null);
-          }
-        } catch (e: any) {
-          console.error("Delete all service requests error:", e);
-          Alert.alert("❌ Error", "Failed to delete service requests: " + e.message);
-        } finally {
-          setDeleting(false);
-        }
-      },
-    });
-  };
-
-  // ✅ DELETE SINGLE FOOD ORDER
-  const deleteFoodOrder = async (orderId: string) => {
-    if (!user) return;
-
-    askConfirm({
-      title: "Delete Food Order",
-      message: "Are you sure you want to delete this food order?\n\nThis action CANNOT be undone.",
-      confirmText: "Delete",
-      variant: "destructive",
-      onConfirm: async () => {
-        try {
-          await deleteDoc(doc(db, "foodOrders", orderId));
-          Alert.alert("✅ Deleted", "Food order deleted successfully.");
-          if (selectedOrderId === orderId) setSelectedOrderId(null);
-        } catch (e: any) {
-          console.error("Delete food order error:", e);
-          Alert.alert("❌ Error", "Failed to delete food order: " + e.message);
-        }
-      },
-    });
-  };
-
-  // ✅ DELETE SINGLE SERVICE REQUEST
-  const deleteServiceRequest = async (requestId: string) => {
-    if (!user) return;
-
-    askConfirm({
-      title: "Delete Service Request",
-      message: "Are you sure you want to delete this service request?\n\nThis action CANNOT be undone.",
-      confirmText: "Delete",
-      variant: "destructive",
-      onConfirm: async () => {
-        try {
-          await deleteDoc(doc(db, "serviceRequests", requestId));
-          Alert.alert("✅ Deleted", "Service request deleted successfully.");
-          if (selectedRequestId === requestId) setSelectedRequestId(null);
-        } catch (e: any) {
-          console.error("Delete service request error:", e);
-          Alert.alert("❌ Error", "Failed to delete service request: " + e.message);
-        }
-      },
-    });
-  };
-
-  // ✅ CHECKOUT ROOM - DELETE ALL ORDERS (FIXED FOR WEB)
-  const checkoutRoom = async (roomId: string, roomNumber: number) => {
+  const checkoutRoom = async (room: Room) => {
     if (!user) return;
     const uid = user.uid;
 
-    const room = occupiedRooms.find((r) => r.id === roomId);
-    const guestId = room?.guestId || null;
-    const roomAssignedAt = room?.assignedAt;
-
-    const foodTotal = totalForRoom(roomNumber, guestId, roomAssignedAt);
-    const serviceTotal = serviceChargesForRoom(roomNumber, roomAssignedAt);
-    const totalCharges = foodTotal + serviceTotal;
-
     askConfirm({
       title: "Confirm Checkout",
-      message: `Checkout Room ${roomNumber}?\n\nGuest: ${room?.guestName || "Unknown"}\nTotal Charges: ₹${totalCharges.toFixed(
-        2
-      )}\n\nThis will DELETE all food orders and service requests for this room.`,
-      confirmText: "Checkout & Delete",
+      message: `Checkout Room ${padRoom(room.roomNumber)}?\n\nThis will delete food orders & service requests for this room.`,
+      confirmText: "Checkout",
       variant: "destructive",
       onConfirm: async () => {
-        try {
-          const batch = writeBatch(db);
+        const batch = writeBatch(db);
 
-          // Update room to available
-          batch.update(doc(db, "users", uid, "rooms", roomId), {
-            status: "available",
-            guestName: null,
-            guestMobile: null,
-            assignedAt: null,
-            checkoutAt: null,
-            guestId: null,
-            updatedAt: serverTimestamp(),
+        // update room
+        batch.update(doc(db, "users", uid, "rooms", room.id), {
+          status: "available",
+          guestName: null,
+          guestMobile: null,
+          assignedAt: null,
+          checkoutAt: null,
+          guestId: null,
+          updatedAt: serverTimestamp(),
+        });
+
+        // delete foodOrders
+        const foodSnap = await getDocs(
+          query(collection(db, "foodOrders"), where("adminId", "==", uid), where("roomNumber", "==", room.roomNumber))
+        );
+        foodSnap.docs.forEach((d) => batch.delete(d.ref));
+
+        // delete serviceRequests
+        const srvSnap = await getDocs(
+          query(collection(db, "serviceRequests"), where("adminId", "==", uid), where("roomNumber", "==", room.roomNumber))
+        );
+        srvSnap.docs.forEach((d) => batch.delete(d.ref));
+
+        // delete orders (guest dashboard)
+        const ordSnap = await getDocs(
+          query(collection(db, "orders"), where("adminId", "==", uid), where("roomNumber", "==", room.roomNumber))
+        );
+        ordSnap.docs.forEach((d) => batch.delete(d.ref));
+
+        // mark guest inactive if known
+        if (room.guestId) {
+          batch.update(doc(db, "guests", room.guestId), {
+            isActive: false,
+            checkedOutAt: serverTimestamp(),
+            checkoutReason: "manual",
           });
-
-          // DELETE ALL food orders for this room
-          const foodOrdersQuery = query(
-            collection(db, "foodOrders"),
-            where("adminId", "==", uid),
-            where("roomNumber", "==", roomNumber)
-          );
-          const foodOrdersSnapshot = await getDocs(foodOrdersQuery);
-          foodOrdersSnapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
-
-          // DELETE ALL service requests for this room
-          const serviceRequestsQuery = query(
-            collection(db, "serviceRequests"),
-            where("adminId", "==", uid),
-            where("roomNumber", "==", roomNumber)
-          );
-          const serviceRequestsSnapshot = await getDocs(serviceRequestsQuery);
-          serviceRequestsSnapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
-
-          // DELETE from orders collection
-          const ordersQuery = query(
-            collection(db, "orders"),
-            where("adminId", "==", uid),
-            where("roomNumber", "==", roomNumber)
-          );
-          const ordersSnapshot = await getDocs(ordersQuery);
-          ordersSnapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
-
-          // Update guest status
-          if (guestId) {
-            batch.update(doc(db, "guests", guestId), {
-              isActive: false,
-              checkedOutAt: serverTimestamp(),
-              checkoutReason: "manual",
-            });
-          } else {
-            const guestQuery = query(
-              collection(db, "guests"),
-              where("adminId", "==", uid),
-              where("roomNumber", "==", roomNumber),
-              where("isActive", "==", true)
-            );
-            const guestSnap = await getDocs(guestQuery);
-            guestSnap.docs.forEach((d) => {
-              batch.update(d.ref, {
-                isActive: false,
-                checkedOutAt: serverTimestamp(),
-                checkoutReason: "manual",
-              });
-            });
-          }
-
-          await batch.commit();
-          Alert.alert(
-            "✅ Success",
-            `Room ${roomNumber} checked out.\nDeleted ${foodOrdersSnapshot.size} orders and ${serviceRequestsSnapshot.size} service requests.\nTotal charges: ₹${totalCharges.toFixed(
-              2
-            )}`
-          );
-        } catch (e: any) {
-          console.error("Checkout failed:", e);
-          Alert.alert("❌ Error", "Failed to checkout room.\n\n" + e.message);
         }
+
+        await batch.commit();
+        Alert.alert("✅ Checked out", `Room ${padRoom(room.roomNumber)} is now available.`);
       },
     });
   };
 
-  // Remaining time until checkout
-  const getRemainingTime = (checkoutAt?: Timestamp) => {
-    if (!checkoutAt) return null;
-    const now = Date.now();
-    const diff = checkoutAt.toMillis() - now;
-    if (diff <= 0) return "Expired";
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    return `${days}d ${hours}h left`;
-  };
-
-  // Format meal plan text
-  const prettyMealText = (meals?: Meal[]) => {
-    if (!meals || meals.length === 0) return "-";
-    const map: Record<Meal, string> = {
-      breakfast: "Breakfast",
-      lunch: "Lunch",
-      dinner: "Dinner",
-    };
-    return meals.map((m) => map[m]).join(", ");
-  };
-
-  // Format order time
-  const formatOrderTime = (createdAt: any) => {
+  const formatDateTime = (ts: any) => {
     try {
-      const dt: Date | null = createdAt?.toDate?.() ?? null;
-      if (!dt) return "Just now";
-      return dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    } catch {
-      return "Just now";
-    }
-  };
-
-  // Format date and time
-  const formatDateTime = (timestamp: any) => {
-    try {
-      const dt: Date | null = timestamp?.toDate?.() ?? null;
+      const dt: Date | null = ts?.toDate?.() ?? null;
       if (!dt) return "-";
-      return (
-        dt.toLocaleDateString() +
-        " " +
-        dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      );
+      return dt.toLocaleDateString() + " " + dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     } catch {
       return "-";
     }
   };
 
-  // Get order summary text
-  const getOrderSummaryText = (o: FoodOrder) => {
-    const items = normalizeItems((o as any).items);
-    if (items.length) {
-      const count = items.reduce((sum, it) => {
-        const q = toNum(it?.qty) || toNum(it?.quantity) || 1;
-        return sum + q;
-      }, 0);
-      return `${count} item${count === 1 ? "" : "s"}`;
-    }
-    if ((o as any).item) return `${toNum((o as any).qty) || 1} item`;
-    return "Food Order";
+  const remaining = (checkoutAt?: Timestamp | null) => {
+    if (!checkoutAt) return null;
+    const diff = checkoutAt.toMillis() - Date.now();
+    if (diff <= 0) return "Expired";
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const days = Math.floor(hours / 24);
+    const remH = hours % 24;
+    return `${days}d ${remH}h left`;
   };
 
-  // Order/service status helpers
-  const getServiceStatusColor = (status?: string) => {
-    const s = (status || "pending").toLowerCase();
-    if (s === "completed") return "#16A34A";
-    if (s === "in-progress") return "#2563EB";
-    if (s === "cancelled") return "#6B7280";
-    if (s === "accepted") return "#7C3AED";
-    return "#F59E0B";
-  };
-  const getServiceStatusText = (status?: string) => {
-    const s = (status || "pending").toLowerCase();
-    if (s === "completed") return "COMPLETED";
-    if (s === "in-progress") return "IN PROGRESS";
-    if (s === "cancelled") return "CANCELLED";
-    if (s === "accepted") return "ACCEPTED";
-    return "PENDING";
-  };
-  const getOrderStatusColor = (status?: string) => {
-    const s = (status || "pending").toLowerCase();
-    if (s === "completed") return "#16A34A";
-    if (s === "in-progress") return "#2563EB";
-    if (s === "cancelled") return "#6B7280";
-    if (s === "accepted") return "#7C3AED";
-    if (s === "ready") return "#059669";
-    return "#F59E0B";
-  };
-  const getOrderStatusText = (status?: string) => {
-    const s = (status || "pending").toLowerCase();
-    if (s === "completed") return "COMPLETED";
-    if (s === "in-progress") return "IN PROGRESS";
-    if (s === "cancelled") return "CANCELLED";
-    if (s === "accepted") return "ACCEPTED";
-    if (s === "ready") return "READY";
-    return "PENDING";
-  };
-
-  // Open logs modal
-  const openLogs = (roomNumber: number | null, type: "food" | "services" = "food") => {
-    setLogsRoomNumber(roomNumber);
-    setSelectedOrderId(null);
-    setSelectedRequestId(null);
-    setLogsType(type);
-    setLogsOpen(true);
-  };
-
-  const clearSelection = () => {
-    setSelectedOrderId(null);
-    setSelectedRequestId(null);
-  };
-
-  const selectedOrder = useMemo(() => {
-    if (!selectedOrderId) return null;
-    return foodOrders.find((o) => o.id === selectedOrderId) ?? null;
-  }, [foodOrders, selectedOrderId]);
-
-  const selectedRequest = useMemo(() => {
-    if (!selectedRequestId) return null;
-    return serviceRequests.find((r) => r.id === selectedRequestId) ?? null;
-  }, [serviceRequests, selectedRequestId]);
-
-  const totalForFiltered = useMemo(() => {
-    if (logsType === "food") {
-      return filteredFoodOrders.reduce((sum, o) => sum + getOrderTotal(o), 0);
-    } else {
-      return filteredServiceRequests.reduce((sum, r) => sum + (r.charges || 0), 0);
-    }
-  }, [filteredFoodOrders, filteredServiceRequests, logsType]);
-
-  const completeOrder = async (orderId: string) => {
-    if (!user) return;
-    try {
-      await updateDoc(doc(db, "foodOrders", orderId), {
-        status: "completed",
-        completedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      Alert.alert("✅ Order Completed", "The food order has been marked as completed.");
-    } catch (e: any) {
-      console.error("Complete order error:", e);
-      Alert.alert("❌ Error", "Failed to complete order: " + e.message);
-    }
-  };
-
-  const completeServiceRequest = async (requestId: string) => {
-    if (!user) return;
-    try {
-      await updateDoc(doc(db, "serviceRequests", requestId), {
-        status: "completed",
-        completedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      Alert.alert("✅ Service Completed", "The service request has been marked as completed.");
-    } catch (e: any) {
-      console.error("Complete service error:", e);
-      Alert.alert("❌ Error", "Failed to complete service: " + e.message);
-    }
-  };
+  if (!user) return null;
 
   if (loading) {
     return (
@@ -1079,48 +420,25 @@ export default function RoomsScreen() {
     );
   }
 
-  // Web values for edit modal
   const webMinNow = formatDateTimeLocal(new Date());
-  const webEditCheckinValue = editCheckinDate ? formatDateTimeLocal(editCheckinDate) : "";
-  const webEditCheckoutValue = checkoutDate ? formatDateTimeLocal(checkoutDate) : "";
+  const webCheckinValue = formatDateTimeLocal(editCheckinDate);
+  const webCheckoutValue = formatDateTimeLocal(checkoutDate);
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/* ✅ CONFIRM MODAL (Web + also used by askConfirm) */}
+      {/* Confirm Modal (web) */}
       <Modal visible={confirm.open} transparent animationType="fade" onRequestClose={closeConfirm}>
         <View style={styles.confirmOverlay}>
           <View style={styles.confirmCard}>
-            <View style={styles.confirmHeader}>
-              <View style={[styles.confirmIcon, confirm.variant === "destructive" && styles.confirmIconDanger]}>
-                <Ionicons
-                  name={confirm.variant === "destructive" ? "warning-outline" : "help-circle-outline"}
-                  size={20}
-                  color={confirm.variant === "destructive" ? "#DC2626" : "#2563EB"}
-                />
-              </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.confirmTitle} numberOfLines={2}>
-                  {confirm.title}
-                </Text>
-              </View>
-            </View>
-
+            <Text style={styles.confirmTitle}>{confirm.title}</Text>
             <Text style={styles.confirmMessage}>{confirm.message}</Text>
-
             <View style={styles.confirmActions}>
-              <Pressable
-                onPress={closeConfirm}
-                disabled={confirmBusy}
-                style={({ pressed }) => [
-                  styles.confirmBtn,
-                  styles.confirmBtnGhost,
-                  pressed && !confirmBusy && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-                ]}
-              >
+              <Pressable style={styles.confirmBtnGhost} onPress={closeConfirm} disabled={confirmBusy}>
                 <Text style={styles.confirmBtnGhostText}>Cancel</Text>
               </Pressable>
-
               <Pressable
+                style={[styles.confirmBtnPrimary, confirm.variant === "destructive" && styles.confirmBtnDanger]}
+                disabled={confirmBusy}
                 onPress={async () => {
                   if (!confirm.onConfirm) return closeConfirm();
                   setConfirmBusy(true);
@@ -1131,442 +449,15 @@ export default function RoomsScreen() {
                     closeConfirm();
                   }
                 }}
-                disabled={confirmBusy}
-                style={({ pressed }) => [
-                  styles.confirmBtn,
-                  confirm.variant === "destructive" ? styles.confirmBtnDanger : styles.confirmBtnPrimary,
-                  pressed && !confirmBusy && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-                ]}
               >
-                {confirmBusy ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.confirmBtnText}>{confirm.confirmText}</Text>
-                )}
+                {confirmBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmBtnText}>{confirm.confirmText}</Text>}
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* LOGS MODAL (unchanged, but delete/checkout confirmations now work on web too) */}
-      <Modal visible={logsOpen} animationType="slide" transparent onRequestClose={() => setLogsOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalHeaderLeft}>
-                <View style={styles.modalIcon}>
-                  <Ionicons
-                    name={logsType === "food" ? "restaurant-outline" : "construct-outline"}
-                    size={18}
-                    color="#2563EB"
-                  />
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.modalTitle} numberOfLines={1}>
-                    {logsType === "food" ? "Food Order Logs" : "Service Requests Logs"}
-                  </Text>
-                  <Text style={styles.modalSubtitle} numberOfLines={1}>
-                    {logsRoomNumber == null
-                      ? `${logsType === "food" ? "Orders" : "Requests"}: ${logsType === "food" ? filteredFoodOrders.length : filteredServiceRequests.length
-                      } • Total: ${formatINR(totalForFiltered)}`
-                      : `Room ${logsRoomNumber} • ${logsType === "food" ? "Orders" : "Requests"}: ${logsType === "food" ? filteredFoodOrders.length : filteredServiceRequests.length
-                      } • Total: ${formatINR(totalForFiltered)}`}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.modalHeaderRight}>
-                {logsType === "food" ? (
-                  <Pressable
-                    onPress={deleteAllFoodOrders}
-                    disabled={deleting || filteredFoodOrders.length === 0}
-                    style={({ pressed }) => [
-                      styles.deleteAllBtn,
-                      (deleting || filteredFoodOrders.length === 0) && styles.deleteAllBtnDisabled,
-                      pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
-                    ]}
-                  >
-                    <Ionicons
-                      name="trash-bin"
-                      size={16}
-                      color={deleting || filteredFoodOrders.length === 0 ? "#9CA3AF" : "#DC2626"}
-                    />
-                    <Text
-                      style={[
-                        styles.deleteAllText,
-                        (deleting || filteredFoodOrders.length === 0) && styles.deleteAllTextDisabled,
-                      ]}
-                    >
-                      {deleting ? "Deleting..." : "Delete All"}
-                    </Text>
-                  </Pressable>
-                ) : (
-                  <Pressable
-                    onPress={deleteAllServiceRequests}
-                    disabled={deleting || filteredServiceRequests.length === 0}
-                    style={({ pressed }) => [
-                      styles.deleteAllBtn,
-                      (deleting || filteredServiceRequests.length === 0) && styles.deleteAllBtnDisabled,
-                      pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
-                    ]}
-                  >
-                    <Ionicons
-                      name="trash-bin"
-                      size={16}
-                      color={deleting || filteredServiceRequests.length === 0 ? "#9CA3AF" : "#DC2626"}
-                    />
-                    <Text
-                      style={[
-                        styles.deleteAllText,
-                        (deleting || filteredServiceRequests.length === 0) && styles.deleteAllTextDisabled,
-                      ]}
-                    >
-                      {deleting ? "Deleting..." : "Delete All"}
-                    </Text>
-                  </Pressable>
-                )}
-
-                <Pressable
-                  onPress={() => setLogsOpen(false)}
-                  style={({ pressed }) => [
-                    styles.modalCloseBtn,
-                    pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
-                  ]}
-                >
-                  <Ionicons name="close" size={18} color="#6B7280" />
-                </Pressable>
-              </View>
-            </View>
-
-            <View style={styles.modalFilterRow}>
-              <Pressable
-                onPress={() => {
-                  setLogsRoomNumber(null);
-                  clearSelection();
-                }}
-                style={({ pressed }) => [
-                  styles.filterPill,
-                  logsRoomNumber == null && styles.filterPillActive,
-                  pressed && { opacity: 0.9 },
-                ]}
-                hitSlop={8}
-              >
-                <Text style={[styles.filterPillText, logsRoomNumber == null && styles.filterPillTextActive]}>
-                  All Rooms
-                </Text>
-              </Pressable>
-
-              <View style={styles.tabContainer}>
-                <Pressable
-                  onPress={() => setLogsType("food")}
-                  style={({ pressed }) => [
-                    styles.tabButton,
-                    logsType === "food" && styles.tabButtonActive,
-                    pressed && { opacity: 0.9 },
-                  ]}
-                >
-                  <Text style={[styles.tabButtonText, logsType === "food" && styles.tabButtonTextActive]}>
-                    Food Orders
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => setLogsType("services")}
-                  style={({ pressed }) => [
-                    styles.tabButton,
-                    logsType === "services" && styles.tabButtonActive,
-                    pressed && { opacity: 0.9 },
-                  ]}
-                >
-                  <Text style={[styles.tabButtonText, logsType === "services" && styles.tabButtonTextActive]}>
-                    Services
-                  </Text>
-                </Pressable>
-              </View>
-
-              {(selectedOrderId || selectedRequestId) && (
-                <Pressable
-                  onPress={clearSelection}
-                  style={({ pressed }) => [styles.filterPill, pressed && { opacity: 0.9 }]}
-                  hitSlop={8}
-                >
-                  <Text style={styles.filterPillText}>Clear Selection</Text>
-                </Pressable>
-              )}
-            </View>
-
-            {/* Selected Order/Request Details */}
-            {selectedOrder ? (
-              <View style={styles.detailCard}>
-                <View style={styles.detailTopRow}>
-                  <View style={styles.detailRoomPill}>
-                    <Text style={styles.detailRoomPillText}>Room {selectedOrder.roomNumber ?? "-"}</Text>
-                  </View>
-
-                  <View
-                    style={[
-                      styles.detailStatusPill,
-                      {
-                        backgroundColor: "rgba(37, 99, 235, 0.10)",
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.detailStatusText, { color: getOrderStatusColor(selectedOrder.status) }]}>
-                      {getOrderStatusText(selectedOrder.status)}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.detailActionRow}>
-                  <Text style={styles.detailTitle}>Total: {formatINR(getOrderTotal(selectedOrder))}</Text>
-                  <Pressable
-                    onPress={() => deleteFoodOrder(selectedOrder.id)}
-                    style={({ pressed }) => [styles.detailDeleteBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-                  >
-                    <Ionicons name="trash-bin" size={14} color="#DC2626" />
-                    <Text style={styles.detailDeleteText}>Delete</Text>
-                  </Pressable>
-                </View>
-
-                <Text style={styles.detailLine}>
-                  Guest: {selectedOrder.guestName ?? "-"}
-                  {selectedOrder.guestMobile ? ` • ${selectedOrder.guestMobile}` : ""}
-                </Text>
-
-                <Text style={styles.detailTime}>Time: {formatOrderTime(selectedOrder.createdAt)}</Text>
-                <Text style={styles.detailMeta}>Source: {selectedOrder.source ?? "—"}</Text>
-
-                <View style={{ marginTop: 10 }}>
-                  {normalizeItems((selectedOrder as any).items).length ? (
-                    normalizeItems((selectedOrder as any).items).map((it: any, idx: number) => {
-                      const qty = toNum(it?.qty) || toNum(it?.quantity) || 1;
-                      const price = toNum(it?.price) || toNum(it?.unitPrice) || toNum(it?.rate) || 0;
-                      const line = toNum(it?.lineTotal) || toNum(it?.total) || toNum(it?.amount) || qty * price;
-
-                      return (
-                        <View key={idx} style={styles.itemRow}>
-                          <Text style={styles.itemLeft} numberOfLines={1}>
-                            {qty} × {orderLineTitle(it)}
-                          </Text>
-                          <Text style={styles.itemRight}>{formatINR(line)}</Text>
-                        </View>
-                      );
-                    })
-                  ) : (selectedOrder as any).item ? (
-                    <View style={styles.itemRow}>
-                      <Text style={styles.itemLeft} numberOfLines={1}>
-                        {toNum((selectedOrder as any).qty) || toNum((selectedOrder as any).quantity) || 1} ×{" "}
-                        {(selectedOrder as any).item}
-                      </Text>
-                      <Text style={styles.itemRight}>{formatINR(getOrderTotal(selectedOrder))}</Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.noItemsText}>No item details found for this order.</Text>
-                  )}
-                </View>
-
-                {selectedOrder.status &&
-                  !["completed", "cancelled"].includes((selectedOrder.status || "").toLowerCase()) && (
-                    <Pressable
-                      onPress={() => completeOrder(selectedOrder.id)}
-                      style={({ pressed }) => [styles.completeBtn, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
-                    >
-                      <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                      <Text style={styles.completeText}>Mark as Completed</Text>
-                    </Pressable>
-                  )}
-              </View>
-            ) : selectedRequest ? (
-              <View style={styles.detailCard}>
-                <View style={styles.detailTopRow}>
-                  <View style={styles.detailRoomPill}>
-                    <Text style={styles.detailRoomPillText}>Room {selectedRequest.roomNumber ?? "-"}</Text>
-                  </View>
-
-                  <View style={[styles.detailStatusPill, { backgroundColor: "rgba(37, 99, 235, 0.10)" }]}>
-                    <Text style={[styles.detailStatusText, { color: getServiceStatusColor(selectedRequest.status) }]}>
-                      {getServiceStatusText(selectedRequest.status)}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.detailActionRow}>
-                  <Text style={styles.detailTitle}>
-                    {selectedRequest.type || "Service Request"}
-                    {selectedRequest.isFreeRequest && (
-                      <Text style={{ color: "#16A34A", fontSize: 12, fontWeight: "900" }}> (FREE)</Text>
-                    )}
-                  </Text>
-                  <Pressable
-                    onPress={() => deleteServiceRequest(selectedRequest.id)}
-                    style={({ pressed }) => [styles.detailDeleteBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-                  >
-                    <Ionicons name="trash-bin" size={14} color="#DC2626" />
-                    <Text style={styles.detailDeleteText}>Delete</Text>
-                  </Pressable>
-                </View>
-
-                <Text style={styles.detailLine}>
-                  Guest: {selectedRequest.guestName ?? "-"}
-                  {selectedRequest.guestMobile ? ` • ${selectedRequest.guestMobile}` : ""}
-                </Text>
-
-                <Text style={styles.detailTime}>Time: {formatOrderTime(selectedRequest.createdAt)}</Text>
-
-                <View style={styles.chargeRow}>
-                  <Text style={styles.chargeLabel}>Charges:</Text>
-                  <Text style={styles.chargeAmount}>
-                    {formatINR(selectedRequest.charges || 0)}
-                    {selectedRequest.currency && ` ${selectedRequest.currency}`}
-                  </Text>
-                </View>
-
-                {selectedRequest.notes && (
-                  <View style={styles.notesBox}>
-                    <Text style={styles.notesLabel}>Notes:</Text>
-                    <Text style={styles.notesText}>{selectedRequest.notes}</Text>
-                  </View>
-                )}
-
-                {selectedRequest.status &&
-                  !["completed", "cancelled"].includes((selectedRequest.status || "").toLowerCase()) && (
-                    <Pressable
-                      onPress={() => completeServiceRequest(selectedRequest.id)}
-                      style={({ pressed }) => [styles.completeBtn, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
-                    >
-                      <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                      <Text style={styles.completeText}>Mark as Completed</Text>
-                    </Pressable>
-                  )}
-              </View>
-            ) : null}
-
-            {/* List of Orders/Requests */}
-            <ScrollView style={styles.modalList} contentContainerStyle={{ paddingBottom: 16 }} showsVerticalScrollIndicator={false}>
-              {logsType === "food" ? (
-                filteredFoodOrders.length === 0 ? (
-                  <View style={styles.modalEmpty}>
-                    <Ionicons name="fast-food-outline" size={24} color="#9CA3AF" />
-                    <Text style={styles.modalEmptyText}>
-                      No food orders{logsRoomNumber != null ? ` for Room ${logsRoomNumber}` : ""}
-                    </Text>
-                  </View>
-                ) : (
-                  filteredFoodOrders.map((o) => (
-                    <Pressable
-                      key={o.id}
-                      onPress={() => {
-                        setSelectedOrderId(o.id);
-                        setSelectedRequestId(null);
-                      }}
-                      style={({ pressed }) => [
-                        styles.requestRow,
-                        selectedOrderId === o.id && styles.requestRowActive,
-                        pressed && { opacity: 0.95, transform: [{ scale: 0.995 }] },
-                      ]}
-                    >
-                      <View style={styles.requestLeft}>
-                        <View style={styles.requestRoomPill}>
-                          <Text style={styles.requestRoomPillText}>Room {o.roomNumber ?? "-"}</Text>
-                        </View>
-
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <View style={styles.requestTopRow}>
-                            <Text style={styles.requestTitle} numberOfLines={1}>
-                              {getOrderSummaryText(o)}
-                            </Text>
-                            <Text style={[styles.requestStatus, { color: getOrderStatusColor(o.status) }]}>
-                              {getOrderStatusText(o.status)}
-                            </Text>
-                          </View>
-                          <Text style={styles.requestSub} numberOfLines={1}>
-                            Total: {formatINR(getOrderTotal(o))}
-                          </Text>
-                          <Text style={styles.requestTime} numberOfLines={1}>
-                            {formatOrderTime(o.createdAt)}
-                            {o.estimatedTime ? ` • ${o.estimatedTime} min` : ""}
-                          </Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.requestRightActions}>
-                        <Pressable
-                          onPress={() => deleteFoodOrder(o.id)}
-                          style={({ pressed }) => [styles.requestDeleteBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-                        >
-                          <Ionicons name="trash-bin" size={16} color="#DC2626" />
-                        </Pressable>
-                        <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-                      </View>
-                    </Pressable>
-                  ))
-                )
-              ) : filteredServiceRequests.length === 0 ? (
-                <View style={styles.modalEmpty}>
-                  <Ionicons name="construct-outline" size={24} color="#9CA3AF" />
-                  <Text style={styles.modalEmptyText}>
-                    No service requests{logsRoomNumber != null ? ` for Room ${logsRoomNumber}` : ""}
-                  </Text>
-                </View>
-              ) : (
-                filteredServiceRequests.map((r) => (
-                  <Pressable
-                    key={r.id}
-                    onPress={() => {
-                      setSelectedRequestId(r.id);
-                      setSelectedOrderId(null);
-                    }}
-                    style={({ pressed }) => [
-                      styles.requestRow,
-                      selectedRequestId === r.id && styles.requestRowActive,
-                      pressed && { opacity: 0.95, transform: [{ scale: 0.995 }] },
-                    ]}
-                  >
-                    <View style={styles.requestLeft}>
-                      <View style={styles.requestRoomPill}>
-                        <Text style={styles.requestRoomPillText}>Room {r.roomNumber ?? "-"}</Text>
-                      </View>
-
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <View style={styles.requestTopRow}>
-                          <Text style={styles.requestTitle} numberOfLines={1}>
-                            {r.type || "Service Request"}
-                            {r.isFreeRequest && (
-                              <Text style={{ color: "#16A34A", fontSize: 10, fontWeight: "900" }}> (FREE)</Text>
-                            )}
-                          </Text>
-                          <Text style={[styles.requestStatus, { color: getServiceStatusColor(r.status) }]}>
-                            {getServiceStatusText(r.status)}
-                          </Text>
-                        </View>
-                        <Text style={styles.requestSub} numberOfLines={1}>
-                          Charges: {formatINR(r.charges || 0)} • {r.guestName || "Guest"}
-                        </Text>
-                        <Text style={styles.requestTime} numberOfLines={1}>
-                          {formatOrderTime(r.createdAt)}
-                          {r.estimatedTime ? ` • ${r.estimatedTime} min` : ""}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.requestRightActions}>
-                      <Pressable
-                        onPress={() => deleteServiceRequest(r.id)}
-                        style={({ pressed }) => [styles.requestDeleteBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-                      >
-                        <Ionicons name="trash-bin" size={16} color="#DC2626" />
-                      </Pressable>
-                      <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-                    </View>
-                  </Pressable>
-                ))
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* EDIT ROOM MODAL (UPDATED: check-in + check-out pickers + real web datetime input) */}
+      {/* Initialize Modal */}
       <Modal visible={editModalOpen} animationType="slide" transparent onRequestClose={closeEditModal}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalOverlay}>
           <View style={styles.modalCard}>
@@ -1576,14 +467,13 @@ export default function RoomsScreen() {
                   <Ionicons name="log-in-outline" size={18} color="#16A34A" />
                 </View>
                 <View>
-                  <Text style={styles.modalTitle}>Initialize Room {editingRoom?.roomNumber}</Text>
+                  <Text style={styles.modalTitle}>
+                    Initialize Room {editingRoom ? padRoom(editingRoom.roomNumber) : ""}
+                  </Text>
                   <Text style={styles.modalSubtitle}>Enter guest details to check-in</Text>
                 </View>
               </View>
-              <Pressable
-                onPress={closeEditModal}
-                style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-              >
+              <Pressable style={styles.modalCloseBtn} onPress={closeEditModal}>
                 <Ionicons name="close" size={18} color="#6B7280" />
               </Pressable>
             </View>
@@ -1621,7 +511,7 @@ export default function RoomsScreen() {
                 </View>
               </View>
 
-              {/* ✅ Check-in Date & Time */}
+              {/* Check-in */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Check-in Date & Time</Text>
 
@@ -1631,7 +521,7 @@ export default function RoomsScreen() {
                     {/* @ts-ignore */}
                     <input
                       type="datetime-local"
-                      value={webEditCheckinValue}
+                      value={webCheckinValue}
                       min={webMinNow}
                       step={60}
                       onChange={(e: any) => {
@@ -1654,7 +544,7 @@ export default function RoomsScreen() {
                     onPress={() => {
                       if (Platform.OS === "android") {
                         openAndroidDateTimePicker({
-                          initial: editCheckinDate ?? new Date(),
+                          initial: editCheckinDate,
                           minimumDate: new Date(),
                           onPicked: (d) => {
                             setEditCheckinDate(d);
@@ -1667,43 +557,21 @@ export default function RoomsScreen() {
                         });
                         return;
                       }
-
-                      // iOS
-                      setIosTempEditCheckin(editCheckinDate ?? new Date());
+                      setIosTempEditCheckin(editCheckinDate);
                       setShowEditCheckinPicker(true);
                     }}
                   >
                     <Ionicons name="calendar-outline" size={18} color="#9CA3AF" style={{ marginLeft: 12 }} />
                     <Text style={styles.dateValueText} numberOfLines={1}>
-                      {formatDateDisplay(editCheckinDate)}
+                      {editCheckinDate.toLocaleString()}
                     </Text>
                   </Pressable>
                 )}
               </View>
 
-              {/* ✅ Check-out Date & Time */}
+              {/* Checkout */}
               <View style={styles.inputGroup}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <Text style={styles.label}>Check-out Date & Time</Text>
-                  {Platform.OS === "web" && (
-                    <Pressable
-                      onPress={() => {
-                        const nextDay = new Date();
-                        nextDay.setDate(nextDay.getDate() + 1);
-                        nextDay.setHours(11, 0, 0, 0);
-                        setCheckoutDate(nextDay);
-                      }}
-                      style={{
-                        backgroundColor: "rgba(37,99,235,0.08)",
-                        paddingHorizontal: 10,
-                        paddingVertical: 4,
-                        borderRadius: 6,
-                      }}
-                    >
-                      <Text style={{ fontSize: 11, fontWeight: "700", color: "#2563EB" }}>Set Tomorrow 11AM</Text>
-                    </Pressable>
-                  )}
-                </View>
+                <Text style={styles.label}>Check-out Date & Time</Text>
 
                 {Platform.OS === "web" ? (
                   <View style={[styles.inputWrapper, { cursor: "pointer" } as any]}>
@@ -1711,8 +579,8 @@ export default function RoomsScreen() {
                     {/* @ts-ignore */}
                     <input
                       type="datetime-local"
-                      value={webEditCheckoutValue}
-                      min={webEditCheckinValue || webMinNow}
+                      value={webCheckoutValue}
+                      min={webCheckinValue || webMinNow}
                       step={60}
                       onChange={(e: any) => {
                         const d = parseDateTimeLocal(e.target.value);
@@ -1727,21 +595,19 @@ export default function RoomsScreen() {
                     onPress={() => {
                       if (Platform.OS === "android") {
                         openAndroidDateTimePicker({
-                          initial: checkoutDate ?? new Date(),
-                          minimumDate: editCheckinDate ?? new Date(),
+                          initial: checkoutDate,
+                          minimumDate: editCheckinDate,
                           onPicked: (d) => setCheckoutDate(d),
                         });
                         return;
                       }
-
-                      // iOS
-                      setIosTempEditCheckout(checkoutDate ?? new Date());
+                      setIosTempEditCheckout(checkoutDate);
                       setShowEditCheckoutPicker(true);
                     }}
                   >
                     <Ionicons name="calendar-outline" size={18} color="#9CA3AF" style={{ marginLeft: 12 }} />
                     <Text style={styles.dateValueText} numberOfLines={1}>
-                      {formatDateDisplay(checkoutDate)}
+                      {checkoutDate.toLocaleString()}
                     </Text>
                   </Pressable>
                 )}
@@ -1767,14 +633,9 @@ export default function RoomsScreen() {
               </Pressable>
             </ScrollView>
 
-            {/* iOS bottom-sheet pickers (inside edit modal) */}
+            {/* iOS picker sheets */}
             {Platform.OS === "ios" && (
-              <Modal
-                visible={showEditCheckinPicker}
-                transparent
-                animationType="slide"
-                onRequestClose={() => setShowEditCheckinPicker(false)}
-              >
+              <Modal visible={showEditCheckinPicker} transparent animationType="slide" onRequestClose={() => setShowEditCheckinPicker(false)}>
                 <View style={styles.pickerOverlay}>
                   <Pressable style={styles.pickerBackdrop} onPress={() => setShowEditCheckinPicker(false)} />
                   <View style={styles.pickerSheet}>
@@ -1797,7 +658,6 @@ export default function RoomsScreen() {
                         <Text style={[styles.pickerAction, styles.pickerActionPrimary]}>Done</Text>
                       </Pressable>
                     </View>
-
                     <DateTimePicker
                       value={iosTempEditCheckin}
                       mode="datetime"
@@ -1811,12 +671,7 @@ export default function RoomsScreen() {
             )}
 
             {Platform.OS === "ios" && (
-              <Modal
-                visible={showEditCheckoutPicker}
-                transparent
-                animationType="slide"
-                onRequestClose={() => setShowEditCheckoutPicker(false)}
-              >
+              <Modal visible={showEditCheckoutPicker} transparent animationType="slide" onRequestClose={() => setShowEditCheckoutPicker(false)}>
                 <View style={styles.pickerOverlay}>
                   <Pressable style={styles.pickerBackdrop} onPress={() => setShowEditCheckoutPicker(false)} />
                   <View style={styles.pickerSheet}>
@@ -1834,12 +689,11 @@ export default function RoomsScreen() {
                         <Text style={[styles.pickerAction, styles.pickerActionPrimary]}>Done</Text>
                       </Pressable>
                     </View>
-
                     <DateTimePicker
                       value={iosTempEditCheckout}
                       mode="datetime"
                       display="spinner"
-                      minimumDate={editCheckinDate ?? new Date()}
+                      minimumDate={editCheckinDate}
                       onChange={(_, d) => d && setIosTempEditCheckout(d)}
                     />
                   </View>
@@ -1850,41 +704,33 @@ export default function RoomsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* MAIN SCREEN */}
+      {/* Main */}
       <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.backgroundDecor}>
-          <View style={styles.bgCircle1} />
-          <View style={styles.bgCircle2} />
-          <View style={styles.bgCircle3} />
-        </View>
-
         <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.greeting} numberOfLines={1}>
-              Hotel Rooms
-            </Text>
-            <Text style={styles.title} numberOfLines={1}>
-              Room Management
-            </Text>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.greeting}>Hotel Rooms</Text>
+            <Text style={styles.title}>Floor-wise Distribution</Text>
           </View>
-
-          <View style={styles.headerRight}>
-            <View style={styles.roleBadge}>
-              <Ionicons name="business-outline" size={14} color="#2563EB" />
-              <Text style={styles.role}>ROOMS</Text>
+          <View style={styles.countBadges}>
+            <View style={styles.badge}>
+              <Text style={[styles.badgeLabel, { color: "#DC2626" }]}>OCCUPIED</Text>
+              <Text style={[styles.badgeValue, { color: "#DC2626" }]}>{occupiedCount}</Text>
+            </View>
+            <View style={styles.badge}>
+              <Text style={[styles.badgeLabel, { color: "#16A34A" }]}>AVAILABLE</Text>
+              <Text style={[styles.badgeValue, { color: "#16A34A" }]}>{availableCount}</Text>
             </View>
           </View>
         </View>
 
-        {/* SEARCH BAR */}
         <View style={styles.searchContainer}>
           <Ionicons name="search" size={20} color="#9CA3AF" />
           <TextInput
-            placeholder="Search rooms (e.g. 102)"
+            placeholder="Search room (e.g. 101 or 001)"
             placeholderTextColor="#9CA3AF"
             style={styles.searchInput}
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={(t) => setSearchQuery(t.replace(/[^\d]/g, ""))}
             keyboardType="number-pad"
           />
           {searchQuery ? (
@@ -1894,235 +740,120 @@ export default function RoomsScreen() {
           ) : null}
         </View>
 
-        {/* OCCUPIED ROOMS */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionLeft}>
-            <View style={[styles.sectionIcon, { backgroundColor: "#DC2626" }]}>
-              <Ionicons name="bed" size={18} color="#fff" />
-            </View>
-            <Text style={styles.sectionTitle}>Occupied Rooms</Text>
-          </View>
-
-          <View style={styles.sectionRight}>
-            <View style={styles.sectionCount}>
-              <Text style={styles.sectionCountText}>{filteredOccupiedRooms.length}</Text>
-            </View>
-
-            <View style={styles.logsButtonsContainer}>
-              <Pressable
-                onPress={() => openLogs(null, "food")}
-                style={({ pressed }) => [styles.logsIconBtn, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
-                hitSlop={10}
-              >
-                <Ionicons name="restaurant-outline" size={18} color="#2563EB" />
-                {foodOrders.length > 0 ? (
-                  <View style={styles.logsIconBadge}>
-                    <Text style={styles.logsIconBadgeText}>{foodOrders.length}</Text>
-                  </View>
-                ) : null}
-              </Pressable>
-
-              <Pressable
-                onPress={() => openLogs(null, "services")}
-                style={({ pressed }) => [styles.logsIconBtn, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
-                hitSlop={10}
-              >
-                <Ionicons name="construct-outline" size={18} color="#F59E0B" />
-                {serviceRequests.length > 0 ? (
-                  <View style={[styles.logsIconBadge, { backgroundColor: "#F59E0B" }]}>
-                    <Text style={styles.logsIconBadgeText}>{serviceRequests.length}</Text>
-                  </View>
-                ) : null}
-              </Pressable>
-            </View>
-          </View>
-        </View>
-
-        {filteredOccupiedRooms.length === 0 && (
+        {floors.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="bed-outline" size={24} color="#9CA3AF" />
-            <Text style={styles.emptyText}>No occupied rooms found</Text>
+            <Text style={styles.emptyText}>No rooms found</Text>
           </View>
-        )}
+        ) : (
+          floors.map(([floor, floorRooms]) => {
+            const isOpen = openFloors[floor] ?? false;
+            const occupied = floorRooms.filter((r) => r.status === "occupied");
+            const available = floorRooms.filter((r) => r.status === "available");
 
-        {filteredOccupiedRooms.map((room) => {
-          const roomFoodCount = foodCountForRoom(room.roomNumber, room.guestId, room.assignedAt);
-          const roomFoodTotal = totalForRoom(room.roomNumber, room.guestId, room.assignedAt);
-          const roomServiceCount = serviceCountForRoom(room.roomNumber, room.assignedAt);
-          const roomServiceTotal = serviceChargesForRoom(room.roomNumber, room.assignedAt);
-          const roomTotalCharges = totalChargesForRoom(room.roomNumber, room.guestId, room.assignedAt);
-
-          return (
-            <View key={room.id} style={styles.occupiedCard}>
-              <View style={styles.cardHeader}>
-                <View style={styles.roomHeaderLeft}>
-                  <Ionicons name="bed" size={18} color="#DC2626" />
-                  <Text style={styles.roomNumber} numberOfLines={1}>
-                    Room {room.roomNumber}
-                  </Text>
-
-                  <View style={styles.roomLogsButtons}>
-                    <Pressable
-                      onPress={() => openLogs(room.roomNumber, "food")}
-                      style={({ pressed }) => [
-                        styles.roomLogsInlineBtn,
-                        pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-                      ]}
-                      hitSlop={10}
-                    >
-                      <Ionicons name="restaurant-outline" size={16} color="#2563EB" />
-                      {roomFoodCount > 0 ? (
-                        <View style={styles.roomLogsBadge}>
-                          <Text style={styles.roomLogsBadgeText}>{roomFoodCount}</Text>
-                        </View>
-                      ) : null}
-                    </Pressable>
-
-                    <Pressable
-                      onPress={() => openLogs(room.roomNumber, "services")}
-                      style={({ pressed }) => [
-                        styles.roomLogsInlineBtn,
-                        pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-                      ]}
-                      hitSlop={10}
-                    >
-                      <Ionicons name="construct-outline" size={16} color="#F59E0B" />
-                      {roomServiceCount > 0 ? (
-                        <View style={[styles.roomLogsBadge, { backgroundColor: "#F59E0B" }]}>
-                          <Text style={styles.roomLogsBadgeText}>{roomServiceCount}</Text>
-                        </View>
-                      ) : null}
-                    </Pressable>
-                  </View>
-                </View>
-
-                <View style={styles.statusBadge}>
-                  <Text style={styles.statusText}>OCCUPIED</Text>
-                </View>
-              </View>
-
-              <View style={styles.guestInfo}>
-                <View style={styles.infoRow}>
-                  <Ionicons name="person" size={14} color="#6B7280" />
-                  <Text style={styles.infoText}>{room.guestName || "No guest name"}</Text>
-                </View>
-
-                {room.guestMobile && (
-                  <View style={styles.infoRow}>
-                    <Ionicons name="call" size={14} color="#6B7280" />
-                    <Text style={styles.infoText}>{room.guestMobile}</Text>
-                  </View>
-                )}
-
-                <View style={styles.infoRow}>
-                  <Ionicons name="restaurant-outline" size={14} color="#6B7280" />
-                  <Text style={styles.infoText}>Meal Plan: {prettyMealText(room.mealPlan)}</Text>
-                </View>
-
-                <View style={styles.infoRow}>
-                  <Ionicons name="cash-outline" size={14} color="#6B7280" />
-                  <Text style={styles.infoText}>
-                    Food Orders: {roomFoodCount} (₹{roomFoodTotal.toFixed(2)})
-                  </Text>
-                </View>
-
-                <View style={styles.infoRow}>
-                  <Ionicons name="construct-outline" size={14} color="#6B7280" />
-                  <Text style={styles.infoText}>
-                    Services: {roomServiceCount} (₹{roomServiceTotal.toFixed(2)})
-                  </Text>
-                </View>
-
-                <View style={styles.infoRow}>
-                  <Ionicons name="card-outline" size={14} color="#2563EB" />
-                  <Text style={[styles.infoText, { fontWeight: "900", color: "#2563EB" }]}>
-                    Total Charges: ₹{roomTotalCharges.toFixed(2)}
-                  </Text>
-                </View>
-
-                {room.checkoutAt && (
-                  <View style={styles.infoRow}>
-                    <Ionicons name="timer" size={14} color="#2563EB" />
-                    <Text style={[styles.infoText, { color: "#2563EB", fontWeight: "700" }]}>
-                      Checkout: {getRemainingTime(room.checkoutAt)}
+            return (
+              <View key={floor} style={styles.floorCard}>
+                <Pressable
+                  onPress={() => setOpenFloors((p) => ({ ...p, [floor]: !isOpen }))}
+                  style={({ pressed }) => [
+                    styles.floorHeader,
+                    pressed && { opacity: 0.95 },
+                  ]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.floorTitle}>{floorLabel(floor)}</Text>
+                    <Text style={styles.floorSub}>
+                      Total: {floorRooms.length} • Occupied: {occupied.length} • Available: {available.length}
                     </Text>
                   </View>
-                )}
+                  <Ionicons name={isOpen ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
+                </Pressable>
 
-                {room.assignedAt && (
-                  <View style={styles.infoRow}>
-                    <Ionicons name="time-outline" size={14} color="#6B7280" />
-                    <Text style={styles.infoText}>Checked-in: {formatDateTime(room.assignedAt)}</Text>
+                {isOpen ? (
+                  <View style={styles.floorBody}>
+                    {/* Occupied */}
+                    {occupied.length > 0 ? (
+                      <>
+                        <Text style={styles.sectionTitle}>Occupied</Text>
+                        {occupied.map((r) => (
+                          <View key={r.id} style={styles.occupiedCard}>
+                            <View style={styles.roomTopRow}>
+                              <Text style={styles.roomNumber}>Room {padRoom(r.roomNumber)}</Text>
+                              <View style={styles.occupiedBadge}>
+                                <Text style={styles.occupiedBadgeText}>OCCUPIED</Text>
+                              </View>
+                            </View>
+
+                            <View style={styles.roomMeta}>
+                              <Text style={styles.metaLine}>
+                                Guest: <Text style={styles.metaStrong}>{r.guestName || "-"}</Text>
+                              </Text>
+                              <Text style={styles.metaLine}>
+                                Mobile: <Text style={styles.metaStrong}>{r.guestMobile || "-"}</Text>
+                              </Text>
+                              <Text style={styles.metaLine}>
+                                Check-in: <Text style={styles.metaStrong}>{formatDateTime(r.assignedAt)}</Text>
+                              </Text>
+                              <Text style={styles.metaLine}>
+                                Checkout: <Text style={styles.metaStrong}>{remaining(r.checkoutAt) || "-"}</Text>
+                              </Text>
+                            </View>
+
+                            <Pressable
+                              onPress={() => checkoutRoom(r)}
+                              style={({ pressed }) => [
+                                styles.checkoutBtn,
+                                pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+                              ]}
+                            >
+                              <Ionicons name="log-out-outline" size={16} color="#fff" />
+                              <Text style={styles.checkoutText}>Checkout</Text>
+                            </Pressable>
+                          </View>
+                        ))}
+                      </>
+                    ) : (
+                      <View style={styles.miniEmpty}>
+                        <Text style={styles.miniEmptyText}>No occupied rooms on this floor.</Text>
+                      </View>
+                    )}
+
+                    {/* Available */}
+                    {available.length > 0 ? (
+                      <>
+                        <Text style={[styles.sectionTitle, { marginTop: 14 }]}>Available</Text>
+                        <View style={styles.availableGrid}>
+                          {available.map((r) => (
+                            <Pressable
+                              key={r.id}
+                              onPress={() => openEditModal(r)}
+                              style={({ pressed }) => [
+                                styles.availableCard,
+                                pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+                              ]}
+                            >
+                              <View style={styles.availableIcon}>
+                                <Ionicons name="bed-outline" size={18} color="#16A34A" />
+                              </View>
+                              <Text style={styles.availableRoom}>Room {padRoom(r.roomNumber)}</Text>
+                              <View style={styles.availableBadge}>
+                                <Text style={styles.availableBadgeText}>AVAILABLE</Text>
+                              </View>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </>
+                    ) : (
+                      <View style={styles.miniEmpty}>
+                        <Text style={styles.miniEmptyText}>No available rooms on this floor.</Text>
+                      </View>
+                    )}
                   </View>
-                )}
-
-                {(roomFoodCount > 0 || roomServiceCount > 0) && (
-                  <View style={styles.pendingStrip}>
-                    <Ionicons name="receipt-outline" size={16} color="#2563EB" />
-                    <Text style={styles.pendingStripText}>
-                      Food: {roomFoodCount} orders • Services: {roomServiceCount} requests
-                    </Text>
-                  </View>
-                )}
+                ) : null}
               </View>
-
-              <Pressable
-                style={({ pressed }) => [styles.checkoutBtn, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
-                onPress={() => checkoutRoom(room.id, room.roomNumber)}
-              >
-                <Ionicons name="log-out" size={16} color="#fff" />
-                <Text style={styles.checkoutText}>
-                  Checkout & Delete All Orders (₹{roomTotalCharges.toFixed(2)})
-                </Text>
-              </Pressable>
-            </View>
-          );
-        })}
-
-        {/* AVAILABLE ROOMS */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionLeft}>
-            <View style={[styles.sectionIcon, { backgroundColor: "#16A34A" }]}>
-              <Ionicons name="bed-outline" size={18} color="#fff" />
-            </View>
-            <Text style={styles.sectionTitle}>Available Rooms</Text>
-          </View>
-          <View style={styles.sectionCount}>
-            <Text style={styles.sectionCountText}>{filteredAvailableRooms.length}</Text>
-          </View>
-        </View>
-
-        {availableRooms.length === 0 && (
-          <View style={styles.emptyState}>
-            <Ionicons name="bed-outline" size={24} color="#9CA3AF" />
-            <Text style={styles.emptyText}>No available rooms</Text>
-          </View>
+            );
+          })
         )}
-
-        {filteredAvailableRooms.length === 0 && (
-          <View style={styles.emptyState}>
-            <Ionicons name="bed-outline" size={24} color="#9CA3AF" />
-            <Text style={styles.emptyText}>No available rooms found</Text>
-          </View>
-        )}
-
-        <View style={styles.availableRoomsGrid}>
-          {filteredAvailableRooms.map((room) => (
-            <Pressable
-              key={room.id}
-              style={({ pressed }) => [styles.availableCard, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
-              onPress={() => openEditModal(room)}
-            >
-              <View style={styles.availableIcon}>
-                <Ionicons name="bed-outline" size={18} color="#16A34A" />
-              </View>
-              <Text style={styles.availableRoomNumber}>Room {room.roomNumber}</Text>
-              <View style={styles.availableBadge}>
-                <Text style={styles.availableStatusText}>AVAILABLE</Text>
-              </View>
-            </Pressable>
-          ))}
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -2131,282 +862,107 @@ export default function RoomsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F9FAFB" },
   container: { flex: 1, backgroundColor: "#F9FAFB" },
-  content: { padding: 16 },
+  content: { padding: 16, paddingBottom: 30 },
 
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F9FAFB",
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#6B7280",
-  },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingText: { marginTop: 12, color: "#6B7280", fontWeight: "800" },
 
-  backgroundDecor: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
-  bgCircle1: {
-    position: "absolute",
-    top: -100,
-    right: -60,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: "rgba(37, 99, 235, 0.08)",
-  },
-  bgCircle2: {
-    position: "absolute",
-    top: 140,
-    left: -100,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: "rgba(37, 99, 235, 0.05)",
-  },
-  bgCircle3: {
-    position: "absolute",
-    bottom: 20,
-    right: -40,
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: "rgba(37, 99, 235, 0.06)",
-  },
-
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 18,
-    gap: 12,
-  },
-  headerLeft: { flex: 1, minWidth: 0 },
-  headerRight: { flexShrink: 0 },
-  greeting: {
-    color: "#6B7280",
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  title: { fontSize: 22, fontWeight: "700", color: "#111827" },
-  roleBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(37, 99, 235, 0.1)",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    gap: 6,
-  },
-  role: {
-    fontSize: 11,
-    color: "#2563EB",
-    fontWeight: "700",
-    letterSpacing: 1.2,
-  },
-
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 10,
-    marginBottom: 12,
-    gap: 10,
-  },
-  sectionLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
-  sectionRight: { flexDirection: "row", alignItems: "center", gap: 10 },
-  sectionIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#111827" },
-  sectionCount: {
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  sectionCountText: { color: "#2563EB", fontWeight: "800" },
-
-  logsButtonsContainer: { flexDirection: "row", gap: 8 },
-  logsIconBtn: {
-    width: 40,
-    height: 36,
-    borderRadius: 12,
+  header: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },
+  greeting: { color: "#6B7280", fontSize: 12, fontWeight: "800", letterSpacing: 1 },
+  title: { color: "#111827", fontSize: 20, fontWeight: "900", marginTop: 2 },
+  countBadges: { flexDirection: "row", gap: 10 },
+  badge: {
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#E5E7EB",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 4,
   },
-  logsIconBadge: {
-    position: "absolute",
-    top: -6,
-    right: -6,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: "#2563EB",
+  badgeLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 1 },
+  badgeValue: { fontSize: 16, fontWeight: "900", marginTop: 2 },
+
+  searchContainer: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 5,
-    borderWidth: 2,
-    borderColor: "#F9FAFB",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    gap: 10,
   },
-  logsIconBadgeText: { color: "#FFFFFF", fontWeight: "900", fontSize: 10 },
+  searchInput: { flex: 1, fontSize: 15, color: "#111827", padding: 0, fontWeight: "700" },
 
   emptyState: {
     backgroundColor: "#FFFFFF",
     padding: 18,
     borderRadius: 16,
     alignItems: "center",
-    marginBottom: 10,
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },
-  emptyText: { color: "#9CA3AF", marginTop: 6, fontWeight: "600" },
+  emptyText: { color: "#9CA3AF", marginTop: 6, fontWeight: "700" },
+
+  floorCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    marginBottom: 12,
+    overflow: "hidden",
+  },
+  floorHeader: {
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#F9FAFB",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  floorTitle: { fontSize: 16, fontWeight: "900", color: "#111827" },
+  floorSub: { marginTop: 3, fontSize: 12, fontWeight: "700", color: "#6B7280" },
+  floorBody: { padding: 14 },
+
+  sectionTitle: { fontSize: 12, fontWeight: "900", color: "#6B7280", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 },
 
   occupiedCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+    padding: 14,
     borderWidth: 1,
     borderColor: "#E5E7EB",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 4,
+    marginBottom: 10,
   },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-    gap: 12,
-  },
-  roomHeaderLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    flex: 1,
-    minWidth: 0,
-  },
-  roomNumber: { fontSize: 16, fontWeight: "700", color: "#111827", flexShrink: 1 },
+  roomTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  roomNumber: { fontSize: 16, fontWeight: "900", color: "#111827" },
+  occupiedBadge: { backgroundColor: "rgba(220, 38, 38, 0.10)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  occupiedBadgeText: { color: "#DC2626", fontWeight: "900", fontSize: 10, letterSpacing: 1 },
 
-  roomLogsButtons: { flexDirection: "row", gap: 6, marginLeft: 4 },
-  roomLogsInlineBtn: {
-    width: 34,
-    height: 30,
-    borderRadius: 10,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  roomLogsBadge: {
-    position: "absolute",
-    top: -6,
-    right: -6,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: "#2563EB",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 4,
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-  },
-  roomLogsBadgeText: { color: "#FFFFFF", fontWeight: "900", fontSize: 9 },
-
-  statusBadge: {
-    backgroundColor: "rgba(220, 38, 38, 0.1)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-    flexShrink: 0,
-  },
-  statusText: {
-    color: "#DC2626",
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.5,
-  },
-
-  guestInfo: { marginBottom: 12 },
-  infoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 4,
-    minHeight: 20,
-  },
-  infoText: {
-    fontSize: 14,
-    color: "#374151",
-    marginLeft: 8,
-    flexShrink: 1,
-  },
-
-  pendingStrip: {
-    marginTop: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(37, 99, 235, 0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(37, 99, 235, 0.18)",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  pendingStripText: {
-    color: "#2563EB",
-    fontWeight: "800",
-    fontSize: 12,
-    flexShrink: 1,
-  },
+  roomMeta: { marginTop: 10, gap: 4 },
+  metaLine: { color: "#6B7280", fontWeight: "700" },
+  metaStrong: { color: "#111827", fontWeight: "900" },
 
   checkoutBtn: {
+    marginTop: 12,
     backgroundColor: "#DC2626",
-    flexDirection: "row",
+    paddingVertical: 12,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-    shadowColor: "#DC2626",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  checkoutText: { color: "#FFFFFF", fontWeight: "700" },
-
-  availableRoomsGrid: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
+    gap: 8,
   },
+  checkoutText: { color: "#fff", fontWeight: "900" },
+
+  miniEmpty: { paddingVertical: 8 },
+  miniEmptyText: { color: "#9CA3AF", fontWeight: "700" },
+
+  availableGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   availableCard: {
     width: "48%",
     backgroundColor: "#FFFFFF",
@@ -2421,30 +977,16 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(22, 163, 74, 0.1)",
-    justifyContent: "center",
+    backgroundColor: "rgba(22, 163, 74, 0.10)",
     alignItems: "center",
+    justifyContent: "center",
     marginBottom: 8,
   },
-  availableRoomNumber: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 6,
-  },
-  availableBadge: {
-    backgroundColor: "rgba(22, 163, 74, 0.1)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  availableStatusText: {
-    color: "#16A34A",
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.5,
-  },
+  availableRoom: { fontSize: 15, fontWeight: "900", color: "#111827", marginBottom: 6 },
+  availableBadge: { backgroundColor: "rgba(22, 163, 74, 0.10)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  availableBadgeText: { color: "#16A34A", fontSize: 10, fontWeight: "900", letterSpacing: 1 },
 
+  // Modal base
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(17, 24, 39, 0.45)",
@@ -2455,69 +997,26 @@ const styles = StyleSheet.create({
   modalCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
+    overflow: "hidden",
+    maxHeight: "90%",
+    width: Platform.OS === "web" ? "100%" : undefined,
+    maxWidth: Platform.OS === "web" ? 560 : undefined,
     borderWidth: 1,
     borderColor: "#E5E7EB",
-    overflow: "hidden",
-    maxHeight: "85%",
-    width: Platform.OS === "web" ? "100%" : undefined,
-    maxWidth: Platform.OS === "web" ? 540 : undefined,
   },
   modalHeader: {
     padding: 14,
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
-    backgroundColor: "#F9FAFB",
   },
-  modalHeaderLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    flex: 1,
-    minWidth: 0,
-  },
-  modalHeaderRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  modalIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: "rgba(37, 99, 235, 0.10)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  modalHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
+  modalIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   modalTitle: { fontSize: 16, fontWeight: "900", color: "#111827" },
-  modalSubtitle: { fontSize: 12, color: "#6B7280", marginTop: 2 },
-
-  deleteAllBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(220, 38, 38, 0.1)",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: "rgba(220, 38, 38, 0.2)",
-  },
-  deleteAllBtnDisabled: {
-    backgroundColor: "#F3F4F6",
-    borderColor: "#E5E7EB",
-  },
-  deleteAllText: {
-    color: "#DC2626",
-    fontWeight: "700",
-    fontSize: 12,
-  },
-  deleteAllTextDisabled: {
-    color: "#9CA3AF",
-  },
-
+  modalSubtitle: { fontSize: 12, fontWeight: "700", color: "#6B7280", marginTop: 2 },
   modalCloseBtn: {
     width: 38,
     height: 38,
@@ -2529,238 +1028,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  modalFilterRow: {
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 8,
-    flexDirection: "row",
-    gap: 10,
-    flexWrap: "wrap",
-    alignItems: "center",
-  },
-  filterPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: "#F3F4F6",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  filterPillActive: {
-    backgroundColor: "rgba(37, 99, 235, 0.10)",
-    borderColor: "rgba(37, 99, 235, 0.22)",
-  },
-  filterPillText: { fontSize: 12, fontWeight: "800", color: "#6B7280" },
-  filterPillTextActive: { color: "#2563EB" },
-
-  tabContainer: { flexDirection: "row", gap: 8, marginLeft: "auto", marginRight: 10 },
-  tabButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: "#F3F4F6",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  tabButtonActive: {
-    backgroundColor: "rgba(37, 99, 235, 0.10)",
-    borderColor: "rgba(37, 99, 235, 0.22)",
-  },
-  tabButtonText: { fontSize: 12, fontWeight: "800", color: "#6B7280" },
-  tabButtonTextActive: { color: "#2563EB" },
-
-  detailCard: {
-    marginHorizontal: 14,
-    marginTop: 8,
-    marginBottom: 10,
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(37, 99, 235, 0.18)",
-    backgroundColor: "rgba(37, 99, 235, 0.06)",
-  },
-  detailTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  detailActionRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 10,
-  },
-  detailRoomPill: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  detailRoomPillText: { fontWeight: "900", color: "#111827", fontSize: 12 },
-  detailStatusPill: {
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  detailStatusText: { fontWeight: "900", fontSize: 12 },
-  detailTitle: { fontSize: 16, fontWeight: "900", color: "#111827" },
-  detailDeleteBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: "rgba(220, 38, 38, 0.1)",
-    borderRadius: 8,
-  },
-  detailDeleteText: {
-    color: "#DC2626",
-    fontWeight: "700",
-    fontSize: 12,
-  },
-  detailLine: { marginTop: 6, fontSize: 13, color: "#374151", fontWeight: "700" },
-  detailTime: { marginTop: 8, fontSize: 12, color: "#2563EB", fontWeight: "900" },
-  detailMeta: { marginTop: 4, fontSize: 12, color: "#6B7280", fontWeight: "700" },
-
-  chargeRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  chargeLabel: { fontSize: 14, fontWeight: "800", color: "#111827" },
-  chargeAmount: { fontSize: 16, fontWeight: "900", color: "#2563EB" },
-
-  notesBox: {
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: "#F59E0B",
-  },
-  notesLabel: { fontSize: 12, fontWeight: "900", color: "#F59E0B", marginBottom: 4 },
-  notesText: { fontSize: 13, color: "#6B7280", fontWeight: "700" },
-
-  itemRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    marginTop: 6,
-  },
-  itemLeft: { flex: 1, color: "#111827", fontWeight: "800", fontSize: 12 },
-  itemRight: { color: "#2563EB", fontWeight: "900", fontSize: 12 },
-  noItemsText: { marginTop: 6, color: "#6B7280", fontWeight: "700", fontSize: 12 },
-
-  completeBtn: {
-    marginTop: 12,
-    backgroundColor: "#16A34A",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    borderRadius: 10,
-    gap: 8,
-  },
-  completeText: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
-
-  modalList: { paddingHorizontal: 14, paddingTop: 6 },
-  modalEmpty: {
-    marginTop: 14,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 16,
-    padding: 16,
-    alignItems: "center",
-  },
-  modalEmptyText: { marginTop: 8, color: "#9CA3AF", fontWeight: "700" },
-
-  requestRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    padding: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#FFFFFF",
-    marginBottom: 10,
-  },
-  requestRowActive: {
-    borderColor: "rgba(37, 99, 235, 0.35)",
-    backgroundColor: "rgba(37, 99, 235, 0.04)",
-  },
-  requestLeft: { flexDirection: "row", gap: 10, alignItems: "center", flex: 1 },
-  requestRoomPill: {
-    backgroundColor: "#F3F4F6",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  requestRoomPillText: { color: "#111827", fontWeight: "900", fontSize: 12 },
-  requestTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  requestTitle: { color: "#111827", fontWeight: "900", fontSize: 13 },
-  requestStatus: { fontSize: 10, fontWeight: "900", letterSpacing: 1 },
-  requestSub: { color: "#6B7280", fontSize: 12, marginTop: 3, fontWeight: "700" },
-  requestTime: { color: "#2563EB", fontSize: 11, marginTop: 4, fontWeight: "900" },
-  requestRightActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  requestDeleteBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: "rgba(220, 38, 38, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  // SEARCH BAR
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
-    gap: 10,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: "#111827",
-    padding: 0,
-  },
-
-  // EDIT MODAL FIELDS
   inputGroup: { marginBottom: 16 },
-  label: { fontSize: 13, fontWeight: "700", color: "#374151", marginBottom: 8 },
+  label: { fontSize: 13, fontWeight: "900", color: "#374151", marginBottom: 8 },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
@@ -2770,159 +1039,47 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     height: 48,
   },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: "#111827",
-    paddingHorizontal: 12,
-    height: "100%",
-  },
-  dateValueText: {
-    flex: 1,
-    fontSize: 15,
-    color: "#111827",
-    fontWeight: "700",
-    paddingHorizontal: 12,
-  },
+  input: { flex: 1, fontSize: 15, color: "#111827", paddingHorizontal: 12, height: "100%", fontWeight: "700" },
+  dateValueText: { flex: 1, fontSize: 14, fontWeight: "800", color: "#111827", paddingHorizontal: 12 },
+
   saveBtn: {
     backgroundColor: "#16A34A",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
     paddingVertical: 14,
     borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
     gap: 8,
-    marginTop: 8,
-    shadowColor: "#16A34A",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
+    marginTop: 6,
   },
-  saveBtnDisabled: {
-    opacity: 0.7,
-  },
-  saveBtnText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700",
-  },
+  saveBtnDisabled: { opacity: 0.7 },
+  saveBtnText: { color: "#fff", fontWeight: "900", fontSize: 15 },
 
   // iOS picker sheet
-  pickerOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  pickerBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(17, 24, 39, 0.35)",
-  },
-  pickerSheet: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    paddingBottom: 18,
-    paddingTop: 10,
-  },
+  pickerOverlay: { flex: 1, justifyContent: "flex-end" },
+  pickerBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(17, 24, 39, 0.35)" },
+  pickerSheet: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingBottom: 18, paddingTop: 10 },
   pickerHeader: {
     paddingHorizontal: 16,
     paddingVertical: 10,
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
     borderBottomWidth: 1,
     borderBottomColor: "rgba(0,0,0,0.06)",
   },
-  pickerTitle: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#111827",
-  },
-  pickerAction: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#6B7280",
-  },
-  pickerActionPrimary: {
-    color: "#2563EB",
-  },
+  pickerTitle: { fontSize: 14, fontWeight: "900", color: "#111827" },
+  pickerAction: { fontSize: 14, fontWeight: "900", color: "#6B7280" },
+  pickerActionPrimary: { color: "#2563EB" },
 
-  // Confirm modal
-  confirmOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(17, 24, 39, 0.45)",
-    padding: 16,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  confirmCard: {
-    width: "100%",
-    maxWidth: 520,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    padding: 16,
-  },
-  confirmHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 10,
-  },
-  confirmIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(37, 99, 235, 0.10)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  confirmIconDanger: {
-    backgroundColor: "rgba(220, 38, 38, 0.10)",
-  },
-  confirmTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#111827",
-  },
-  confirmMessage: {
-    color: "#374151",
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 18,
-    marginBottom: 14,
-    whiteSpace: "pre-wrap" as any,
-  },
-  confirmActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 10,
-  },
-  confirmBtn: {
-    height: 44,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  confirmBtnGhost: {
-    backgroundColor: "#F3F4F6",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  confirmBtnGhostText: {
-    fontWeight: "900",
-    color: "#374151",
-  },
-  confirmBtnPrimary: {
-    backgroundColor: "#2563EB",
-  },
-  confirmBtnDanger: {
-    backgroundColor: "#DC2626",
-  },
-  confirmBtnText: {
-    color: "#FFFFFF",
-    fontWeight: "900",
-  },
+  // Confirm
+  confirmOverlay: { flex: 1, backgroundColor: "rgba(17, 24, 39, 0.45)", padding: 16, justifyContent: "center", alignItems: "center" },
+  confirmCard: { width: "100%", maxWidth: 520, backgroundColor: "#FFFFFF", borderRadius: 18, borderWidth: 1, borderColor: "#E5E7EB", padding: 16 },
+  confirmTitle: { fontSize: 16, fontWeight: "900", color: "#111827", marginBottom: 8 },
+  confirmMessage: { color: "#374151", fontSize: 13, fontWeight: "700", lineHeight: 18, marginBottom: 14 },
+  confirmActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
+  confirmBtnGhost: { height: 44, paddingHorizontal: 14, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#F3F4F6", borderWidth: 1, borderColor: "#E5E7EB" },
+  confirmBtnGhostText: { fontWeight: "900", color: "#374151" },
+  confirmBtnPrimary: { height: 44, paddingHorizontal: 14, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#2563EB" },
+  confirmBtnDanger: { backgroundColor: "#DC2626" },
+  confirmBtnText: { color: "#FFFFFF", fontWeight: "900" },
 });
