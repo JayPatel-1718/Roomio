@@ -250,18 +250,38 @@ export default function MenuScreen() {
         setAiParsing(true);
         setAiImportModalOpen(true);
         setParsedItems([]);
+
         try {
-            console.log("🤖 Starting AI parsing...");
+            console.log("🤖 Starting AI menu parsing...");
+            console.log("Source length:", source?.length || 0);
+
             const data = await parseMenuFromAI(source, type);
             console.log("✅ AI parsed items:", data);
-            setParsedItems(data);
-            if (data.length === 0) {
-                Alert.alert("No Items Found", "AI couldn't detect any menu items. Try a clearer photo.");
+
+            if (data && data.length > 0) {
+                setParsedItems(data);
+                Alert.alert(
+                    "✅ Menu Scanned Successfully",
+                    `Found ${data.length} items on your menu. Please review them before saving.`,
+                    [{ text: "Review Items" }]
+                );
+            } else {
+                setAiImportModalOpen(false);
+                Alert.alert(
+                    "No Items Found",
+                    "AI couldn't detect any menu items. Please try:\n\n• Taking a clearer photo\n• Ensuring good lighting\n• Making sure the menu text is readable\n• Taking a closer shot of the menu",
+                    [{ text: "OK" }]
+                );
             }
         } catch (error) {
             console.error("AI parsing error:", error);
-            Alert.alert("AI Error", "Could not parse menu. Please try a clearer photo or check AI service.");
             setAiImportModalOpen(false);
+
+            Alert.alert(
+                "AI Parsing Failed",
+                "Could not read the menu. Please try:\n\n• Taking a clearer photo\n• Better lighting\n• Making sure the text is sharp\n• Taking multiple photos of different sections",
+                [{ text: "OK" }]
+            );
         } finally {
             setAiParsing(false);
         }
