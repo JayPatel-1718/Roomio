@@ -32,6 +32,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { getAuth } from "firebase/auth";
 import { useRouter } from "expo-router";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
 
 type Meal = "breakfast" | "lunch" | "dinner";
 type Room = {
@@ -133,7 +136,7 @@ type BillData = {
   nights: number;
   roomRate: number;
   roomTotal: number;
-  foodOrders: Array<{ name: string; amount: number }>;
+  foodOrders: Array<{ name: string; amount: number; qty?: number }>;
   foodTotal: number;
   serviceRequests: Array<{ name: string; amount: number }>;
   serviceTotal: number;
@@ -142,6 +145,7 @@ type BillData = {
   taxAmount: number;
   grandTotal: number;
   generatedAt: Date;
+  invoiceNumber?: string;
 };
 
 // Floor helpers
@@ -204,6 +208,7 @@ export default function RoomsScreen() {
   const [billModalOpen, setBillModalOpen] = useState(false);
   const [billData, setBillData] = useState<BillData | null>(null);
   const [generatingBill, setGeneratingBill] = useState(false);
+  const [generatingPDF, setGeneratingPDF] = useState(false);
   const [pendingCheckoutRoom, setPendingCheckoutRoom] = useState<{ id: string; roomNumber: number } | null>(null);
   // ✅ Room rate input in bill modal
   const [billRoomRate, setBillRoomRate] = useState<string>("1500");
@@ -529,6 +534,33 @@ Check permissions for /serviceRequests.`
     return qty * price;
   };
 
+  // Get order items with quantities
+  const getOrderItems = (o: FoodOrder): Array<{ name: string; qty: number; amount: number }> => {
+    const items: Array<{ name: string; qty: number; amount: number }> = [];
+    const normalizedItems = normalizeItems((o as any).items);
+
+    if (normalizedItems.length) {
+      normalizedItems.forEach((it) => {
+        const qty = toNum(it?.qty) || toNum(it?.quantity) || 1;
+        const price = toNum(it?.price) || toNum(it?.unitPrice) || toNum(it?.rate) || 0;
+        const line = toNum(it?.lineTotal) || toNum(it?.total) || toNum(it?.amount) || qty * price;
+        items.push({
+          name: orderLineTitle(it),
+          qty,
+          amount: line,
+        });
+      });
+    } else if ((o as any).item) {
+      const qty = toNum((o as any).qty) || toNum((o as any).quantity) || 1;
+      items.push({
+        name: (o as any).item,
+        qty,
+        amount: getOrderTotal(o),
+      });
+    }
+    return items;
+  };
+
   const totalForRoom = (roomNumber: number, guestId?: string, roomAssignedAt?: Timestamp) => {
     const orders = getCurrentGuestFoodOrders(roomNumber, guestId, roomAssignedAt);
     return orders.reduce((sum, o) => sum + getOrderTotal(o), 0);
@@ -560,6 +592,19 @@ Check permissions for /serviceRequests.`
     const foodOrdersList = getCurrentGuestFoodOrders(room.roomNumber, guestId, roomAssignedAt);
     const serviceRequestsList = getServiceRequestsForRoom(room.roomNumber, roomAssignedAt);
 
+    // Get detailed food orders with items
+    const foodOrderItems: Array<{ name: string; amount: number; qty?: number }> = [];
+    foodOrdersList.forEach((order) => {
+      const items = getOrderItems(order);
+      items.forEach((item) => {
+        foodOrderItems.push({
+          name: item.name,
+          amount: item.amount,
+          qty: item.qty,
+        });
+      });
+    });
+
     const foodTotal = foodOrdersList.reduce((sum, o) => sum + getOrderTotal(o), 0);
     const serviceTotal = serviceRequestsList.reduce((sum, r) => sum + (r.charges || 0), 0);
 
@@ -581,6 +626,9 @@ Check permissions for /serviceRequests.`
     const taxAmount = subtotal * taxRate;
     const grandTotal = subtotal + taxAmount;
 
+    // Generate invoice number
+    const invoiceNumber = `INV-${room.roomNumber}-${new Date().getFullYear()}${pad2(new Date().getMonth() + 1)}${pad2(new Date().getDate())}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+
     return {
       roomNumber: room.roomNumber,
       guestName: room.guestName || "Unknown",
@@ -590,10 +638,7 @@ Check permissions for /serviceRequests.`
       nights,
       roomRate: rate,
       roomTotal,
-      foodOrders: foodOrdersList.map((o) => ({
-        name: getOrderSummaryText(o),
-        amount: getOrderTotal(o),
-      })),
+      foodOrders: foodOrderItems,
       foodTotal,
       serviceRequests: serviceRequestsList.map((r) => ({
         name: r.type || "Service Request",
@@ -605,6 +650,7 @@ Check permissions for /serviceRequests.`
       taxAmount,
       grandTotal,
       generatedAt: new Date(),
+      invoiceNumber,
     };
   };
 
@@ -641,6 +687,323 @@ Check permissions for /serviceRequests.`
     setBillData(null);
     setPendingCheckoutRoom(null);
     setBillRoomRate("1500");
+  };
+
+  // ✅ GENERATE PDF INVOICE
+  const generatePDFInvoice = async () => {
+    if (!billData) return;
+
+    setGeneratingPDF(true);
+    try {
+      // Create HTML template for invoice
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Invoice ${billData.invoiceNumber}</title>
+          <style>
+            body {
+              font-family: 'Helvetica', 'Arial', sans-serif;
+              margin: 0;
+              padding: 20px;
+              color: #333;
+            }
+            .invoice-container {
+              max-width: 800px;
+              margin: 0 auto;
+              background: #fff;
+              border: 1px solid #e5e7eb;
+              border-radius: 12px;
+              padding: 30px;
+            }
+            .header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 30px;
+              padding-bottom: 20px;
+              border-bottom: 2px solid #2563eb;
+            }
+            .hotel-name {
+              font-size: 28px;
+              font-weight: 700;
+              color: #2563eb;
+            }
+            .invoice-title {
+              font-size: 24px;
+              font-weight: 700;
+              color: #111827;
+            }
+            .invoice-number {
+              color: #6b7280;
+              font-size: 14px;
+              margin-top: 5px;
+            }
+            .guest-info {
+              background: #f9fafb;
+              padding: 20px;
+              border-radius: 10px;
+              margin-bottom: 25px;
+            }
+            .guest-info h3 {
+              margin: 0 0 15px 0;
+              color: #374151;
+              font-size: 16px;
+              font-weight: 600;
+            }
+            .info-grid {
+              display: grid;
+              grid-template-columns: repeat(2, 1fr);
+              gap: 15px;
+            }
+            .info-item {
+              display: flex;
+              flex-direction: column;
+            }
+            .info-label {
+              font-size: 12px;
+              color: #6b7280;
+              margin-bottom: 4px;
+            }
+            .info-value {
+              font-size: 16px;
+              font-weight: 600;
+              color: #111827;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 25px;
+            }
+            th {
+              text-align: left;
+              padding: 12px 8px;
+              background: #f3f4f6;
+              color: #374151;
+              font-weight: 600;
+              font-size: 14px;
+            }
+            td {
+              padding: 10px 8px;
+              border-bottom: 1px solid #e5e7eb;
+              color: #4b5563;
+            }
+            .amount-col {
+              text-align: right;
+            }
+            .summary {
+              margin-top: 20px;
+              padding-top: 20px;
+              border-top: 2px solid #e5e7eb;
+            }
+            .summary-row {
+              display: flex;
+              justify-content: space-between;
+              padding: 8px 0;
+              font-size: 16px;
+            }
+            .summary-label {
+              color: #6b7280;
+            }
+            .grand-total {
+              font-size: 20px;
+              font-weight: 700;
+              color: #111827;
+              margin-top: 15px;
+              padding-top: 15px;
+              border-top: 2px solid #2563eb;
+            }
+            .grand-total .summary-label {
+              color: #111827;
+              font-weight: 600;
+            }
+            .footer {
+              margin-top: 30px;
+              text-align: center;
+              color: #9ca3af;
+              font-size: 12px;
+            }
+            .badge {
+              display: inline-block;
+              padding: 4px 8px;
+              background: #dbeafe;
+              color: #2563eb;
+              border-radius: 4px;
+              font-size: 12px;
+              font-weight: 600;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="invoice-container">
+            <div class="header">
+              <div>
+                <div class="hotel-name">Roomio</div>
+                <div class="invoice-number">Invoice #${billData.invoiceNumber}</div>
+              </div>
+              <div>
+                <div class="invoice-title">TAX INVOICE</div>
+                <div class="invoice-number">Date: ${billData.generatedAt.toLocaleDateString()}</div>
+              </div>
+            </div>
+
+            <div class="guest-info">
+              <h3>Guest Information</h3>
+              <div class="info-grid">
+                <div class="info-item">
+                  <span class="info-label">Guest Name</span>
+                  <span class="info-value">${billData.guestName}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">Mobile</span>
+                  <span class="info-value">${billData.guestMobile}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">Room Number</span>
+                  <span class="info-value">${billData.roomNumber}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">Check-in / Check-out</span>
+                  <span class="info-value">${billData.checkIn?.toLocaleDateString() || '-'} to ${billData.checkOut?.toLocaleDateString() || '-'}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">Nights</span>
+                  <span class="info-value">${billData.nights}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">Room Rate</span>
+                  <span class="info-value">₹${billData.roomRate}/night</span>
+                </div>
+              </div>
+            </div>
+
+            <h3 style="margin-bottom: 15px; color: #374151;">Room Charges</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Description</th>
+                  <th class="amount-col">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Room ${billData.roomNumber} (${billData.nights} night${billData.nights > 1 ? 's' : ''})</td>
+                  <td class="amount-col">${formatINR(billData.roomTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            ${billData.foodOrders.length > 0 ? `
+              <h3 style="margin-bottom: 15px; color: #374151;">Food Orders</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th class="amount-col">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${billData.foodOrders.map(item => `
+                    <tr>
+                      <td>${item.name}</td>
+                      <td>${item.qty || 1}</td>
+                      <td class="amount-col">${formatINR(item.amount)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            ` : ''}
+
+            ${billData.serviceRequests.length > 0 ? `
+              <h3 style="margin-bottom: 15px; color: #374151;">Service Requests</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Service</th>
+                    <th class="amount-col">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${billData.serviceRequests.map(item => `
+                    <tr>
+                      <td>${item.name}</td>
+                      <td class="amount-col">${formatINR(item.amount)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            ` : ''}
+
+            <div class="summary">
+              <div class="summary-row">
+                <span class="summary-label">Room Charges:</span>
+                <span>${formatINR(billData.roomTotal)}</span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-label">Food Total:</span>
+                <span>${formatINR(billData.foodTotal)}</span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-label">Service Total:</span>
+                <span>${formatINR(billData.serviceTotal)}</span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-label">Subtotal:</span>
+                <span>${formatINR(billData.subtotal)}</span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-label">GST (${(billData.taxRate * 100).toFixed(0)}%):</span>
+                <span>${formatINR(billData.taxAmount)}</span>
+              </div>
+              <div class="summary-row grand-total">
+                <span class="summary-label">GRAND TOTAL:</span>
+                <span>${formatINR(billData.grandTotal)}</span>
+              </div>
+            </div>
+
+            <div class="footer">
+              <p>This is a computer generated invoice - valid without signature</p>
+              <p>Thank you for choosing Roomio!</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      // Generate PDF
+      const { uri } = await Print.printToFileAsync({ html: htmlContent });
+
+      // Share the PDF
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: `Invoice ${billData.invoiceNumber}`,
+          UTI: 'com.adobe.pdf'
+        });
+      } else {
+        // If sharing not available, save to downloads
+        const fileName = `Invoice_${billData.invoiceNumber}.pdf`;
+        const fileUri = FileSystem.documentDirectory + fileName;
+        await FileSystem.copyAsync({
+          from: uri,
+          to: fileUri
+        });
+        Alert.alert(
+          "PDF Saved",
+          `Invoice saved to:\n${fileUri}`,
+          [{ text: "OK" }]
+        );
+      }
+
+    } catch (error) {
+      console.error("PDF generation error:", error);
+      Alert.alert("Error", "Failed to generate PDF invoice. Please try again.");
+    } finally {
+      setGeneratingPDF(false);
+    }
   };
 
   // ✅ PROCEED TO CHECKOUT (from bill modal)
@@ -1258,7 +1621,7 @@ This action CANNOT be undone.`,
         </View>
       </Modal>
 
-      {/* ✅ BILL PREVIEW MODAL */}
+      {/* ✅ BILL PREVIEW MODAL WITH PDF EXPORT */}
       <Modal visible={billModalOpen} animationType="slide" transparent onRequestClose={closeBillModal}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -1272,15 +1635,36 @@ This action CANNOT be undone.`,
                 </View>
                 <View>
                   <Text style={styles.modalTitle}>Guest Bill</Text>
-                  <Text style={styles.modalSubtitle}>Room {billData?.roomNumber} • Itemized Charges</Text>
+                  <Text style={styles.modalSubtitle}>Room {billData?.roomNumber} • {billData?.invoiceNumber}</Text>
                 </View>
               </View>
-              <Pressable
-                onPress={closeBillModal}
-                style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-              >
-                <Ionicons name="close" size={18} color="#6B7280" />
-              </Pressable>
+              <View style={styles.modalHeaderRight}>
+                {/* PDF Export Button */}
+                <Pressable
+                  onPress={generatePDFInvoice}
+                  disabled={generatingPDF}
+                  style={({ pressed }) => [
+                    styles.pdfBtn,
+                    pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
+                    generatingPDF && styles.pdfBtnDisabled,
+                  ]}
+                >
+                  {generatingPDF ? (
+                    <ActivityIndicator size="small" color="#2563EB" />
+                  ) : (
+                    <>
+                      <Ionicons name="document-text-outline" size={18} color="#2563EB" />
+                      <Text style={styles.pdfBtnText}>PDF</Text>
+                    </>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={closeBillModal}
+                  style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+                >
+                  <Ionicons name="close" size={18} color="#6B7280" />
+                </Pressable>
+              </View>
             </View>
             <ScrollView contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
               {generatingBill ? (
@@ -1350,7 +1734,10 @@ This action CANNOT be undone.`,
                     {billData.foodOrders.length > 0 ? (
                       billData.foodOrders.map((item, idx) => (
                         <View key={idx} style={styles.billItemRow}>
-                          <Text style={styles.billItemName}>{item.name}</Text>
+                          <Text style={styles.billItemName}>
+                            {item.name}
+                            {item.qty ? ` (x${item.qty})` : ''}
+                          </Text>
                           <Text style={styles.billItemAmount}>{formatINR(item.amount)}</Text>
                         </View>
                       ))
@@ -2793,6 +3180,25 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 16, fontWeight: "900", color: "#111827" },
   modalSubtitle: { fontSize: 12, color: "#6B7280", marginTop: 2 },
+  pdfBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(37, 99, 235, 0.1)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: "rgba(37, 99, 235, 0.2)",
+  },
+  pdfBtnDisabled: {
+    opacity: 0.5,
+  },
+  pdfBtnText: {
+    color: "#2563EB",
+    fontWeight: "700",
+    fontSize: 12,
+  },
   deleteAllBtn: {
     flexDirection: "row",
     alignItems: "center",
