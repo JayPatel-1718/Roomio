@@ -34,7 +34,6 @@ import { useRouter } from "expo-router";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 
 type Meal = "breakfast" | "lunch" | "dinner";
-
 type Room = {
   id: string;
   roomNumber: number;
@@ -47,7 +46,6 @@ type Room = {
   mealPlan?: Meal[];
   assignedAt?: Timestamp;
 };
-
 type FoodOrder = {
   id: string;
   roomNumber?: number | string;
@@ -92,7 +90,6 @@ type FoodOrder = {
   readyAt?: Timestamp;
   sourceOrderId?: string;
 };
-
 type ServiceRequest = {
   id: string;
   adminId?: string;
@@ -118,7 +115,6 @@ type ServiceRequest = {
   foodOrderId?: string;
   sourceOrderId?: string;
 };
-
 type ConfirmState = {
   open: boolean;
   title: string;
@@ -127,22 +123,38 @@ type ConfirmState = {
   variant: "destructive" | "primary";
   onConfirm?: () => void | Promise<void>;
 };
+type BillData = {
+  roomNumber: number;
+  guestName: string;
+  guestMobile: string;
+  checkIn: Date | null;
+  checkOut: Date | null;
+  nights: number;
+  roomRate: number;
+  roomTotal: number;
+  foodOrders: Array<{ name: string; amount: number }>;
+  foodTotal: number;
+  serviceRequests: Array<{ name: string; amount: number }>;
+  serviceTotal: number;
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  grandTotal: number;
+  generatedAt: Date;
+};
 
 // Floor helpers
 const padRoom = (n: number) => (n < 100 ? String(n).padStart(3, "0") : String(n));
-
 const getFloorFromRoom = (r: Room) => {
   if (typeof r.floorNumber === "number") return r.floorNumber;
   return r.roomNumber >= 100 ? Math.floor(r.roomNumber / 100) : 0;
 };
-
 const floorLabel = (floor: number) => (floor === 0 ? "Ground Floor" : `Floor ${floor}`);
 
 export default function RoomsScreen() {
   const auth = getAuth();
   const user = auth.currentUser;
   const router = useRouter();
-
   const [occupiedRooms, setOccupiedRooms] = useState<Room[]>([]);
   const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
   const [foodOrders, setFoodOrders] = useState<FoodOrder[]>([]);
@@ -154,17 +166,14 @@ export default function RoomsScreen() {
   const [logsType, setLogsType] = useState<"food" | "services">("food");
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
-
   // Search and Edit Room State
   const [searchQuery, setSearchQuery] = useState("");
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [guestName, setGuestName] = useState("");
   const [guestMobile, setGuestMobile] = useState("");
-
   // Floor expand state
   const [openFloors, setOpenFloors] = useState<Record<number, boolean>>({});
-
   // ✅ Add check-in + check-out pickers
   const [editCheckinDate, setEditCheckinDate] = useState<Date | null>(new Date());
   const [checkoutDate, setCheckoutDate] = useState<Date | null>(() => {
@@ -173,15 +182,12 @@ export default function RoomsScreen() {
     tomorrow.setHours(11, 0, 0, 0);
     return tomorrow;
   });
-
   // iOS picker modals inside Edit Room modal
   const [showEditCheckinPicker, setShowEditCheckinPicker] = useState(false);
   const [showEditCheckoutPicker, setShowEditCheckoutPicker] = useState(false);
   const [iosTempEditCheckin, setIosTempEditCheckin] = useState<Date>(new Date());
   const [iosTempEditCheckout, setIosTempEditCheckout] = useState<Date>(new Date());
-
   const [initializing, setInitializing] = useState(false);
-
   // ✅ Web confirm modal
   const [confirm, setConfirm] = useState<ConfirmState>({
     open: false,
@@ -191,6 +197,11 @@ export default function RoomsScreen() {
     variant: "primary",
   });
   const [confirmBusy, setConfirmBusy] = useState(false);
+  // ✅ BILL GENERATION STATE
+  const [billModalOpen, setBillModalOpen] = useState(false);
+  const [billData, setBillData] = useState<BillData | null>(null);
+  const [generatingBill, setGeneratingBill] = useState(false);
+  const [pendingCheckoutRoom, setPendingCheckoutRoom] = useState<{ id: string; roomNumber: number } | null>(null);
 
   const occupiedRoomsRef = useRef<Room[]>([]);
   useEffect(() => {
@@ -199,13 +210,11 @@ export default function RoomsScreen() {
 
   // ---------- Date helpers ----------
   const pad2 = (n: number) => String(n).padStart(2, "0");
-
   const formatDateTimeLocal = (d: Date) => {
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(
       d.getHours()
     )}:${pad2(d.getMinutes())}`;
   };
-
   const parseDateTimeLocal = (val: string) => {
     try {
       const [datePart, timePart] = val.split("T");
@@ -218,7 +227,6 @@ export default function RoomsScreen() {
       return null;
     }
   };
-
   const formatDateDisplay = (date: Date | null) => {
     if (!date) return "Select date & time";
     return date.toLocaleString([], {
@@ -228,7 +236,6 @@ export default function RoomsScreen() {
       minute: "2-digit",
     });
   };
-
   // ✅ Android: show Date picker then Time picker
   const openAndroidDateTimePicker = ({
     initial,
@@ -250,16 +257,13 @@ export default function RoomsScreen() {
           onDone?.();
           return;
         }
-
         const pickedDate = new Date(date);
-
         DateTimePickerAndroid.open({
           value: pickedDate,
           mode: "time",
           onChange: (event2, time) => {
             onDone?.();
             if (event2.type !== "set" || !time) return;
-
             const finalDate = new Date(pickedDate);
             finalDate.setHours(time.getHours(), time.getMinutes(), 0, 0);
             onPicked(finalDate);
@@ -268,7 +272,6 @@ export default function RoomsScreen() {
       },
     });
   };
-
   // Web input style
   const webNativeDateInputStyle: any = {
     flex: 1,
@@ -283,28 +286,26 @@ export default function RoomsScreen() {
     fontWeight: 600,
     cursor: "pointer",
   };
-
   // Improve web datetime indicator
   useEffect(() => {
     if (Platform.OS !== "web") return;
     const style = document.createElement("style");
     style.textContent = `
-      input[type="datetime-local"] {
-        color-scheme: light;
-        accent-color: #2563EB;
-      }
-      input[type="datetime-local"]::-webkit-calendar-picker-indicator {
-        cursor: pointer;
-        opacity: 0.8;
-      }
-      input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
-        opacity: 1;
-      }
-    `;
+input[type="datetime-local"] {
+color-scheme: light;
+accent-color: #2563EB;
+}
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+cursor: pointer;
+opacity: 0.8;
+}
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+opacity: 1;
+}
+`;
     document.head.appendChild(style);
     return () => document.head.removeChild(style);
   }, []);
-
   // ✅ Web-safe confirm
   const askConfirm = (cfg: Omit<ConfirmState, "open">) => {
     if (Platform.OS !== "web") {
@@ -320,7 +321,6 @@ export default function RoomsScreen() {
     }
     setConfirm({ open: true, ...cfg });
   };
-
   const closeConfirm = () => {
     setConfirm((c) => ({ ...c, open: false }));
     setConfirmBusy(false);
@@ -332,10 +332,8 @@ export default function RoomsScreen() {
       router.replace("/admin-login");
       return;
     }
-
     const uid = user.uid;
     setLoading(true);
-
     // 1️⃣ Rooms listener
     const roomsRef = collection(db, "users", uid, "rooms");
     const unsubRooms = onSnapshot(
@@ -343,21 +341,17 @@ export default function RoomsScreen() {
       (snap) => {
         const occupied: Room[] = [];
         const available: Room[] = [];
-
         snap.docs.forEach((docSnap) => {
           const data = docSnap.data();
           const room: Room = { id: docSnap.id, ...(data as any) };
           if (room.status === "occupied") occupied.push(room);
           else available.push(room);
         });
-
         occupied.sort((a, b) => a.roomNumber - b.roomNumber);
         available.sort((a, b) => a.roomNumber - b.roomNumber);
-
         setOccupiedRooms(occupied);
         setAvailableRooms(available);
         occupiedRoomsRef.current = occupied;
-
         // Auto open first floor
         const allRooms = [...occupied, ...available];
         const floors = Array.from(new Set(allRooms.map((r) => getFloorFromRoom(r)))).sort((a, b) => a - b);
@@ -370,11 +364,9 @@ export default function RoomsScreen() {
         Alert.alert("Error", "Failed to load rooms: " + err.message);
       }
     );
-
     // 2️⃣ Food Orders listener
     const foodOrdersRef = collection(db, "foodOrders");
     const foodOrdersQuery = query(foodOrdersRef, where("adminId", "==", uid));
-
     const unsubFoodOrders = onSnapshot(
       foodOrdersQuery,
       (snap) => {
@@ -390,26 +382,23 @@ export default function RoomsScreen() {
         console.error("Food orders listener error:", err);
         Alert.alert(
           "Food Orders Error",
-          `Cannot read food orders: ${err.message}\n\nCheck permissions for /foodOrders.`
+          `Cannot read food orders: ${err.message}
+Check permissions for /foodOrders.`
         );
       }
     );
-
     // 3️⃣ Service Requests listener
     const serviceRequestsRef = collection(db, "serviceRequests");
     const serviceRequestsQuery = query(serviceRequestsRef, where("adminId", "==", uid));
-
     const unsubServiceRequests = onSnapshot(
       serviceRequestsQuery,
       (snap) => {
         const items = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as ServiceRequest[];
-
         items.sort((a: any, b: any) => {
           const aTime = a.createdAt?.toMillis?.() || a.updatedAt?.toMillis?.() || 0;
           const bTime = b.createdAt?.toMillis?.() || b.updatedAt?.toMillis?.() || 0;
           return bTime - aTime;
         });
-
         setServiceRequests(items);
         setLoading(false);
       },
@@ -417,12 +406,12 @@ export default function RoomsScreen() {
         console.error("Service requests listener error:", err);
         Alert.alert(
           "Service Requests Error",
-          `Cannot read service requests: ${err.message}\n\nCheck permissions for /serviceRequests.`
+          `Cannot read service requests: ${err.message}
+Check permissions for /serviceRequests.`
         );
         setLoading(false);
       }
     );
-
     return () => {
       unsubRooms();
       unsubFoodOrders();
@@ -436,7 +425,6 @@ export default function RoomsScreen() {
     const stillExists = foodOrders.some((o) => o.id === selectedOrderId);
     if (!stillExists) setSelectedOrderId(null);
   }, [foodOrders, selectedOrderId]);
-
   useEffect(() => {
     if (!selectedRequestId) return;
     const stillExists = serviceRequests.some((r) => r.id === selectedRequestId);
@@ -451,37 +439,29 @@ export default function RoomsScreen() {
   ) => {
     return foodOrders.filter((o) => {
       if (String(o.roomNumber ?? "") !== String(roomNumber)) return false;
-
       if (roomAssignedAt && o.createdAt) {
         const orderTime = o.createdAt?.toMillis?.() || 0;
         const roomAssignedTime = roomAssignedAt.toMillis();
         if (orderTime < roomAssignedTime) return false;
       }
-
       return true;
     });
   };
-
   const getServiceRequestsForRoom = (roomNumber: number, roomAssignedAt?: Timestamp) => {
     return serviceRequests.filter((r) => {
       if (String(r.roomNumber ?? "") !== String(roomNumber)) return false;
-
       if (roomAssignedAt && r.createdAt) {
         const requestTime = r.createdAt?.toMillis?.() || 0;
         const roomAssignedTime = roomAssignedAt.toMillis();
         if (requestTime < roomAssignedTime) return false;
       }
-
       return true;
     });
   };
-
   const foodCountForRoom = (roomNumber: number, guestId?: string, roomAssignedAt?: Timestamp) =>
     getCurrentGuestFoodOrders(roomNumber, guestId, roomAssignedAt).length;
-
   const serviceCountForRoom = (roomNumber: number, roomAssignedAt?: Timestamp) =>
     getServiceRequestsForRoom(roomNumber, roomAssignedAt).length;
-
   const serviceChargesForRoom = (roomNumber: number, roomAssignedAt?: Timestamp) => {
     const requests = getServiceRequestsForRoom(roomNumber, roomAssignedAt);
     return requests.reduce((sum, r) => sum + (r.charges || 0), 0);
@@ -528,21 +508,17 @@ export default function RoomsScreen() {
       toNum((o as any).finalAmount) ||
       toNum((o as any).payable) ||
       toNum((o as any).price);
-
     if (directTotal > 0) return directTotal;
-
     const items = normalizeItems((o as any).items);
     if (items.length) {
       return items.reduce((sum, it) => {
         const line = toNum(it?.lineTotal) || toNum(it?.total) || toNum(it?.amount);
         if (line > 0) return sum + line;
-
         const qty = toNum(it?.qty) || toNum(it?.quantity) || 1;
         const price = toNum(it?.price) || toNum(it?.unitPrice) || toNum(it?.rate) || 0;
         return sum + qty * price;
       }, 0);
     }
-
     const qty = toNum((o as any).qty) || toNum((o as any).quantity) || 1;
     const price = toNum((o as any).price) || toNum((o as any).unitPrice) || 0;
     return qty * price;
@@ -557,6 +533,87 @@ export default function RoomsScreen() {
     const foodTotal = totalForRoom(roomNumber, guestId, roomAssignedAt);
     const serviceTotal = serviceChargesForRoom(roomNumber, roomAssignedAt);
     return foodTotal + serviceTotal;
+  };
+
+  // ✅ GENERATE BILL DATA
+  const generateBillData = (room: Room): BillData => {
+    const guestId = room.guestId || null;
+    const roomAssignedAt = room.assignedAt;
+    const foodOrdersList = getCurrentGuestFoodOrders(room.roomNumber, guestId, roomAssignedAt);
+    const serviceRequestsList = getServiceRequestsForRoom(room.roomNumber, roomAssignedAt);
+
+    const foodTotal = foodOrdersList.reduce((sum, o) => sum + getOrderTotal(o), 0);
+    const serviceTotal = serviceRequestsList.reduce((sum, r) => sum + (r.charges || 0), 0);
+
+    // Calculate nights
+    let nights = 1;
+    if (room.assignedAt && room.checkoutAt) {
+      const checkIn = room.assignedAt.toDate();
+      const checkOut = room.checkoutAt.toDate();
+      const diffMs = checkOut.getTime() - checkIn.getTime();
+      nights = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+    }
+
+    // Default room rate (can be customized later)
+    const roomRate = 1500; // ₹1500 per night default
+    const roomTotal = roomRate * nights;
+
+    const subtotal = roomTotal + foodTotal + serviceTotal;
+    const taxRate = 0.18; // 18% GST
+    const taxAmount = subtotal * taxRate;
+    const grandTotal = subtotal + taxAmount;
+
+    return {
+      roomNumber: room.roomNumber,
+      guestName: room.guestName || "Unknown",
+      guestMobile: room.guestMobile || "-",
+      checkIn: room.assignedAt?.toDate() || null,
+      checkOut: room.checkoutAt?.toDate() || null,
+      nights,
+      roomRate,
+      roomTotal,
+      foodOrders: foodOrdersList.map((o) => ({
+        name: getOrderSummaryText(o),
+        amount: getOrderTotal(o),
+      })),
+      foodTotal,
+      serviceRequests: serviceRequestsList.map((r) => ({
+        name: r.type || "Service Request",
+        amount: r.charges || 0,
+      })),
+      serviceTotal,
+      subtotal,
+      taxRate,
+      taxAmount,
+      grandTotal,
+      generatedAt: new Date(),
+    };
+  };
+
+  // ✅ OPEN BILL PREVIEW
+  const openBillPreview = (roomId: string, roomNumber: number) => {
+    const room = occupiedRooms.find((r) => r.id === roomId);
+    if (!room) return;
+    setGeneratingBill(true);
+    const bill = generateBillData(room);
+    setBillData(bill);
+    setPendingCheckoutRoom({ id: roomId, roomNumber });
+    setBillModalOpen(true);
+    setGeneratingBill(false);
+  };
+
+  // ✅ CLOSE BILL MODAL
+  const closeBillModal = () => {
+    setBillModalOpen(false);
+    setBillData(null);
+    setPendingCheckoutRoom(null);
+  };
+
+  // ✅ PROCEED TO CHECKOUT (from bill modal)
+  const proceedToCheckout = () => {
+    if (!pendingCheckoutRoom) return;
+    closeBillModal();
+    checkoutRoomConfirmed(pendingCheckoutRoom.id, pendingCheckoutRoom.roomNumber);
   };
 
   // Filter food orders for logs modal
@@ -576,7 +633,6 @@ export default function RoomsScreen() {
     if (!searchQuery) return occupiedRooms;
     return occupiedRooms.filter((r) => String(r.roomNumber).includes(searchQuery));
   }, [occupiedRooms, searchQuery]);
-
   const filteredAvailableRooms = useMemo(() => {
     if (!searchQuery) return availableRooms;
     return availableRooms.filter((r) => String(r.roomNumber).includes(searchQuery));
@@ -585,20 +641,17 @@ export default function RoomsScreen() {
   // Floor grouping
   const floors = useMemo(() => {
     const map = new Map<number, { occupied: Room[]; available: Room[] }>();
-
     // Initialize with all rooms
     filteredOccupiedRooms.forEach((room) => {
       const floor = getFloorFromRoom(room);
       if (!map.has(floor)) map.set(floor, { occupied: [], available: [] });
       map.get(floor)!.occupied.push(room);
     });
-
     filteredAvailableRooms.forEach((room) => {
       const floor = getFloorFromRoom(room);
       if (!map.has(floor)) map.set(floor, { occupied: [], available: [] });
       map.get(floor)!.available.push(room);
     });
-
     return Array.from(map.entries()).sort((a, b) => a[0] - b[0]);
   }, [filteredOccupiedRooms, filteredAvailableRooms]);
 
@@ -607,18 +660,14 @@ export default function RoomsScreen() {
     setEditingRoom(room);
     setGuestName("");
     setGuestMobile("");
-
     const now = new Date();
     setEditCheckinDate(now);
-
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(11, 0, 0, 0);
     setCheckoutDate(tomorrow);
-
     setEditModalOpen(true);
   };
-
   const closeEditModal = () => {
     setEditModalOpen(false);
     setEditingRoom(null);
@@ -629,40 +678,32 @@ export default function RoomsScreen() {
     setShowEditCheckinPicker(false);
     setShowEditCheckoutPicker(false);
   };
-
   const saveRoomDetails = async () => {
     if (!editingRoom || !user) return;
-
     if (!guestName.trim()) {
       Alert.alert("Invalid Name", "Guest name is required");
       return;
     }
-
     if (!/^[0-9]{10}$/.test(guestMobile)) {
       Alert.alert("Invalid Mobile", "Mobile number must be exactly 10 digits");
       return;
     }
-
     if (!editCheckinDate || !checkoutDate) {
       Alert.alert("Invalid Dates", "Please select both check-in and check-out date & time");
       return;
     }
-
     if (checkoutDate <= editCheckinDate) {
       Alert.alert("Invalid Dates", "Checkout must be after check-in time");
       return;
     }
-
     if (checkoutDate <= new Date()) {
       Alert.alert("Invalid Checkout", "Checkout must be in the future");
       return;
     }
-
     setInitializing(true);
     try {
       const uid = user.uid;
       const currentUserEmail = user.email;
-
       // 1. Create Guest Record
       const guestData: any = {
         adminId: uid,
@@ -677,12 +718,9 @@ export default function RoomsScreen() {
         checkoutAt: Timestamp.fromDate(checkoutDate),
         mealPlan: [],
       };
-
       const guestRef = await addDoc(collection(db, "guests"), guestData);
-
       // 2. Update Room
       const roomRef = doc(db, "users", uid, "rooms", editingRoom.id);
-
       await updateDoc(roomRef, {
         status: "occupied",
         guestName: guestName.trim(),
@@ -693,7 +731,6 @@ export default function RoomsScreen() {
         adminEmail: currentUserEmail,
         updatedAt: serverTimestamp(),
       });
-
       Alert.alert("✅ Success", `Room ${editingRoom.roomNumber} initialized for ${guestName}`);
       closeEditModal();
     } catch (error: any) {
@@ -711,11 +748,11 @@ export default function RoomsScreen() {
       Alert.alert("No Orders", "There are no food orders to delete.");
       return;
     }
-
     askConfirm({
       title: "Delete All Food Orders",
       message: `Are you sure you want to delete ALL ${filteredFoodOrders.length} food orders${logsRoomNumber ? ` for Room ${logsRoomNumber}` : ""
-        }?\n\nThis action CANNOT be undone.`,
+        }?
+This action CANNOT be undone.`,
       confirmText: deleting ? "Deleting..." : "Delete All",
       variant: "destructive",
       onConfirm: async () => {
@@ -723,7 +760,6 @@ export default function RoomsScreen() {
         try {
           const batch = writeBatch(db);
           const uid = user.uid;
-
           let ordersQuery;
           if (logsRoomNumber) {
             ordersQuery = query(
@@ -734,11 +770,9 @@ export default function RoomsScreen() {
           } else {
             ordersQuery = query(collection(db, "foodOrders"), where("adminId", "==", uid));
           }
-
           const ordersSnapshot = await getDocs(ordersQuery);
           ordersSnapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
           await batch.commit();
-
           Alert.alert("✅ Success", `Deleted ${ordersSnapshot.size} food orders successfully.`);
           if (selectedOrderId) {
             const stillExists = foodOrders.some((o) => o.id === selectedOrderId);
@@ -761,11 +795,11 @@ export default function RoomsScreen() {
       Alert.alert("No Requests", "There are no service requests to delete.");
       return;
     }
-
     askConfirm({
       title: "Delete All Service Requests",
       message: `Are you sure you want to delete ALL ${filteredServiceRequests.length} service requests${logsRoomNumber ? ` for Room ${logsRoomNumber}` : ""
-        }?\n\nThis action CANNOT be undone.`,
+        }?
+This action CANNOT be undone.`,
       confirmText: deleting ? "Deleting..." : "Delete All",
       variant: "destructive",
       onConfirm: async () => {
@@ -773,7 +807,6 @@ export default function RoomsScreen() {
         try {
           const batch = writeBatch(db);
           const uid = user.uid;
-
           let requestsQuery;
           if (logsRoomNumber) {
             requestsQuery = query(
@@ -784,11 +817,9 @@ export default function RoomsScreen() {
           } else {
             requestsQuery = query(collection(db, "serviceRequests"), where("adminId", "==", uid));
           }
-
           const requestsSnapshot = await getDocs(requestsQuery);
           requestsSnapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
           await batch.commit();
-
           Alert.alert("✅ Success", `Deleted ${requestsSnapshot.size} service requests successfully.`);
           if (selectedRequestId) {
             const stillExists = serviceRequests.some((r) => r.id === selectedRequestId);
@@ -807,10 +838,9 @@ export default function RoomsScreen() {
   // ✅ DELETE SINGLE FOOD ORDER
   const deleteFoodOrder = async (orderId: string) => {
     if (!user) return;
-
     askConfirm({
       title: "Delete Food Order",
-      message: "Are you sure you want to delete this food order?\n\nThis action CANNOT be undone.",
+      message: "Are you sure you want to delete this food order?\nThis action CANNOT be undone.",
       confirmText: "Delete",
       variant: "destructive",
       onConfirm: async () => {
@@ -829,10 +859,9 @@ export default function RoomsScreen() {
   // ✅ DELETE SINGLE SERVICE REQUEST
   const deleteServiceRequest = async (requestId: string) => {
     if (!user) return;
-
     askConfirm({
       title: "Delete Service Request",
-      message: "Are you sure you want to delete this service request?\n\nThis action CANNOT be undone.",
+      message: "Are you sure you want to delete this service request?\nThis action CANNOT be undone.",
       confirmText: "Delete",
       variant: "destructive",
       onConfirm: async () => {
@@ -848,30 +877,27 @@ export default function RoomsScreen() {
     });
   };
 
-  // ✅ CHECKOUT ROOM - DELETE ALL ORDERS
-  const checkoutRoom = async (roomId: string, roomNumber: number) => {
+  // ✅ CHECKOUT ROOM - CONFIRMED (after bill preview)
+  const checkoutRoomConfirmed = async (roomId: string, roomNumber: number) => {
     if (!user) return;
     const uid = user.uid;
-
     const room = occupiedRooms.find((r) => r.id === roomId);
     const guestId = room?.guestId || null;
     const roomAssignedAt = room?.assignedAt;
-
     const foodTotal = totalForRoom(roomNumber, guestId, roomAssignedAt);
     const serviceTotal = serviceChargesForRoom(roomNumber, roomAssignedAt);
     const totalCharges = foodTotal + serviceTotal;
 
     askConfirm({
       title: "Confirm Checkout",
-      message: `Checkout Room ${roomNumber}?\n\nGuest: ${room?.guestName || "Unknown"}\nTotal Charges: ₹${totalCharges.toFixed(
+      message: `Checkout Room ${roomNumber}?\nGuest: ${room?.guestName || "Unknown"}\nTotal Charges: ₹${totalCharges.toFixed(
         2
-      )}\n\nThis will DELETE all food orders and service requests for this room.`,
+      )}\nThis will DELETE all food orders and service requests for this room.`,
       confirmText: "Checkout & Delete",
       variant: "destructive",
       onConfirm: async () => {
         try {
           const batch = writeBatch(db);
-
           // Update room to available
           batch.update(doc(db, "users", uid, "rooms", roomId), {
             status: "available",
@@ -882,7 +908,6 @@ export default function RoomsScreen() {
             guestId: null,
             updatedAt: serverTimestamp(),
           });
-
           // DELETE ALL food orders for this room
           const foodOrdersQuery = query(
             collection(db, "foodOrders"),
@@ -891,7 +916,6 @@ export default function RoomsScreen() {
           );
           const foodOrdersSnapshot = await getDocs(foodOrdersQuery);
           foodOrdersSnapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
-
           // DELETE ALL service requests for this room
           const serviceRequestsQuery = query(
             collection(db, "serviceRequests"),
@@ -900,7 +924,6 @@ export default function RoomsScreen() {
           );
           const serviceRequestsSnapshot = await getDocs(serviceRequestsQuery);
           serviceRequestsSnapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
-
           // DELETE from orders collection
           const ordersQuery = query(
             collection(db, "orders"),
@@ -909,7 +932,6 @@ export default function RoomsScreen() {
           );
           const ordersSnapshot = await getDocs(ordersQuery);
           ordersSnapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
-
           // Update guest status
           if (guestId) {
             batch.update(doc(db, "guests", guestId), {
@@ -933,20 +955,22 @@ export default function RoomsScreen() {
               });
             });
           }
-
           await batch.commit();
           Alert.alert(
             "✅ Success",
-            `Room ${roomNumber} checked out.\nDeleted ${foodOrdersSnapshot.size} orders and ${serviceRequestsSnapshot.size} service requests.\nTotal charges: ₹${totalCharges.toFixed(
-              2
-            )}`
+            `Room ${roomNumber} checked out.\nDeleted ${foodOrdersSnapshot.size} orders and ${serviceRequestsSnapshot.size} service requests.\nTotal charges: ₹${totalCharges.toFixed(2)}`
           );
         } catch (e: any) {
           console.error("Checkout failed:", e);
-          Alert.alert("❌ Error", "Failed to checkout room.\n\n" + e.message);
+          Alert.alert("❌ Error", "Failed to checkout room.\n" + e.message);
         }
       },
     });
+  };
+
+  // ✅ OLD CHECKOUT FUNCTION (now opens bill preview first)
+  const checkoutRoom = (roomId: string, roomNumber: number) => {
+    openBillPreview(roomId, roomNumber);
   };
 
   // Remaining time until checkout
@@ -987,11 +1011,7 @@ export default function RoomsScreen() {
     try {
       const dt: Date | null = timestamp?.toDate?.() ?? null;
       if (!dt) return "-";
-      return (
-        dt.toLocaleDateString() +
-        " " +
-        dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      );
+      return dt.toLocaleDateString() + " " + dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     } catch {
       return "-";
     }
@@ -1055,22 +1075,18 @@ export default function RoomsScreen() {
     setLogsType(type);
     setLogsOpen(true);
   };
-
   const clearSelection = () => {
     setSelectedOrderId(null);
     setSelectedRequestId(null);
   };
-
   const selectedOrder = useMemo(() => {
     if (!selectedOrderId) return null;
     return foodOrders.find((o) => o.id === selectedOrderId) ?? null;
   }, [foodOrders, selectedOrderId]);
-
   const selectedRequest = useMemo(() => {
     if (!selectedRequestId) return null;
     return serviceRequests.find((r) => r.id === selectedRequestId) ?? null;
   }, [serviceRequests, selectedRequestId]);
-
   const totalForFiltered = useMemo(() => {
     if (logsType === "food") {
       return filteredFoodOrders.reduce((sum, o) => sum + getOrderTotal(o), 0);
@@ -1078,7 +1094,6 @@ export default function RoomsScreen() {
       return filteredServiceRequests.reduce((sum, r) => sum + (r.charges || 0), 0);
     }
   }, [filteredFoodOrders, filteredServiceRequests, logsType]);
-
   const completeOrder = async (orderId: string) => {
     if (!user) return;
     try {
@@ -1093,7 +1108,6 @@ export default function RoomsScreen() {
       Alert.alert("❌ Error", "Failed to complete order: " + e.message);
     }
   };
-
   const completeServiceRequest = async (requestId: string) => {
     if (!user) return;
     try {
@@ -1132,7 +1146,9 @@ export default function RoomsScreen() {
         <View style={styles.confirmOverlay}>
           <View style={styles.confirmCard}>
             <View style={styles.confirmHeader}>
-              <View style={[styles.confirmIcon, confirm.variant === "destructive" && styles.confirmIconDanger]}>
+              <View
+                style={[styles.confirmIcon, confirm.variant === "destructive" && styles.confirmIconDanger]}
+              >
                 <Ionicons
                   name={confirm.variant === "destructive" ? "warning-outline" : "help-circle-outline"}
                   size={20}
@@ -1145,9 +1161,7 @@ export default function RoomsScreen() {
                 </Text>
               </View>
             </View>
-
             <Text style={styles.confirmMessage}>{confirm.message}</Text>
-
             <View style={styles.confirmActions}>
               <Pressable
                 onPress={closeConfirm}
@@ -1160,7 +1174,6 @@ export default function RoomsScreen() {
               >
                 <Text style={styles.confirmBtnGhostText}>Cancel</Text>
               </Pressable>
-
               <Pressable
                 onPress={async () => {
                   if (!confirm.onConfirm) return closeConfirm();
@@ -1190,6 +1203,151 @@ export default function RoomsScreen() {
         </View>
       </Modal>
 
+      {/* ✅ BILL PREVIEW MODAL */}
+      <Modal visible={billModalOpen} animationType="slide" transparent onRequestClose={closeBillModal}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderLeft}>
+                <View style={[styles.modalIcon, { backgroundColor: "rgba(37, 99, 235, 0.1)" }]}>
+                  <Ionicons name="receipt-outline" size={18} color="#2563EB" />
+                </View>
+                <View>
+                  <Text style={styles.modalTitle}>Guest Bill</Text>
+                  <Text style={styles.modalSubtitle}>Room {billData?.roomNumber} • Itemized Charges</Text>
+                </View>
+              </View>
+              <Pressable
+                onPress={closeBillModal}
+                style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+              >
+                <Ionicons name="close" size={18} color="#6B7280" />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+              {generatingBill ? (
+                <View style={styles.billLoading}>
+                  <ActivityIndicator size="large" color="#2563EB" />
+                  <Text style={styles.billLoadingText}>Generating Bill...</Text>
+                </View>
+              ) : billData ? (
+                <>
+                  {/* Guest Info */}
+                  <View style={styles.billSection}>
+                    <Text style={styles.billSectionTitle}>Guest Information</Text>
+                    <View style={styles.billInfoRow}>
+                      <Text style={styles.billInfoLabel}>Name:</Text>
+                      <Text style={styles.billInfoValue}>{billData.guestName}</Text>
+                    </View>
+                    <View style={styles.billInfoRow}>
+                      <Text style={styles.billInfoLabel}>Mobile:</Text>
+                      <Text style={styles.billInfoValue}>{billData.guestMobile}</Text>
+                    </View>
+                    <View style={styles.billInfoRow}>
+                      <Text style={styles.billInfoLabel}>Check-in:</Text>
+                      <Text style={styles.billInfoValue}>
+                        {billData.checkIn?.toLocaleDateString() || "-"}
+                      </Text>
+                    </View>
+                    <View style={styles.billInfoRow}>
+                      <Text style={styles.billInfoLabel}>Check-out:</Text>
+                      <Text style={styles.billInfoValue}>
+                        {billData.checkOut?.toLocaleDateString() || "-"}
+                      </Text>
+                    </View>
+                    <View style={styles.billInfoRow}>
+                      <Text style={styles.billInfoLabel}>Nights:</Text>
+                      <Text style={styles.billInfoValue}>{billData.nights}</Text>
+                    </View>
+                  </View>
+
+                  {/* Room Charges */}
+                  <View style={styles.billSection}>
+                    <Text style={styles.billSectionTitle}>Room Charges</Text>
+                    <View style={styles.billItemRow}>
+                      <Text style={styles.billItemName}>Room {billData.roomNumber} ({billData.nights} night{billData.nights > 1 ? 's' : ''})</Text>
+                      <Text style={styles.billItemAmount}>{formatINR(billData.roomTotal)}</Text>
+                    </View>
+                  </View>
+
+                  {/* Food Orders */}
+                  <View style={styles.billSection}>
+                    <Text style={styles.billSectionTitle}>Food Orders</Text>
+                    {billData.foodOrders.length > 0 ? (
+                      billData.foodOrders.map((item, idx) => (
+                        <View key={idx} style={styles.billItemRow}>
+                          <Text style={styles.billItemName}>{item.name}</Text>
+                          <Text style={styles.billItemAmount}>{formatINR(item.amount)}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.billNoItems}>No food orders</Text>
+                    )}
+                    <View style={styles.billSubtotalRow}>
+                      <Text style={styles.billSubtotalLabel}>Food Total:</Text>
+                      <Text style={styles.billSubtotalAmount}>{formatINR(billData.foodTotal)}</Text>
+                    </View>
+                  </View>
+
+                  {/* Service Requests */}
+                  <View style={styles.billSection}>
+                    <Text style={styles.billSectionTitle}>Service Requests</Text>
+                    {billData.serviceRequests.length > 0 ? (
+                      billData.serviceRequests.map((item, idx) => (
+                        <View key={idx} style={styles.billItemRow}>
+                          <Text style={styles.billItemName}>{item.name}</Text>
+                          <Text style={styles.billItemAmount}>{formatINR(item.amount)}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.billNoItems}>No service requests</Text>
+                    )}
+                    <View style={styles.billSubtotalRow}>
+                      <Text style={styles.billSubtotalLabel}>Service Total:</Text>
+                      <Text style={styles.billSubtotalAmount}>{formatINR(billData.serviceTotal)}</Text>
+                    </View>
+                  </View>
+
+                  {/* Bill Summary */}
+                  <View style={styles.billSummary}>
+                    <View style={styles.billSummaryRow}>
+                      <Text style={styles.billSummaryLabel}>Subtotal:</Text>
+                      <Text style={styles.billSummaryAmount}>{formatINR(billData.subtotal)}</Text>
+                    </View>
+                    <View style={styles.billSummaryRow}>
+                      <Text style={styles.billSummaryLabel}>GST ({(billData.taxRate * 100).toFixed(0)}%):</Text>
+                      <Text style={styles.billSummaryAmount}>{formatINR(billData.taxAmount)}</Text>
+                    </View>
+                    <View style={[styles.billSummaryRow, styles.billGrandTotalRow]}>
+                      <Text style={styles.billGrandTotalLabel}>GRAND TOTAL:</Text>
+                      <Text style={styles.billGrandTotalAmount}>{formatINR(billData.grandTotal)}</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.billFooter}>
+                    Generated: {billData.generatedAt.toLocaleString()}
+                  </Text>
+
+                  <Pressable
+                    onPress={proceedToCheckout}
+                    style={({ pressed }) => [
+                      styles.billProceedBtn,
+                      pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+                    ]}
+                  >
+                    <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                    <Text style={styles.billProceedText}>Proceed to Checkout</Text>
+                  </Pressable>
+                </>
+              ) : null}
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* LOGS MODAL */}
       <Modal visible={logsOpen} animationType="slide" transparent onRequestClose={() => setLogsOpen(false)}>
         <View style={styles.modalOverlay}>
@@ -1216,7 +1374,6 @@ export default function RoomsScreen() {
                   </Text>
                 </View>
               </View>
-
               <View style={styles.modalHeaderRight}>
                 {logsType === "food" ? (
                   <Pressable
@@ -1267,37 +1424,25 @@ export default function RoomsScreen() {
                     </Text>
                   </Pressable>
                 )}
-
                 <Pressable
                   onPress={() => setLogsOpen(false)}
-                  style={({ pressed }) => [
-                    styles.modalCloseBtn,
-                    pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
-                  ]}
+                  style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
                 >
                   <Ionicons name="close" size={18} color="#6B7280" />
                 </Pressable>
               </View>
             </View>
-
             <View style={styles.modalFilterRow}>
               <Pressable
                 onPress={() => {
                   setLogsRoomNumber(null);
                   clearSelection();
                 }}
-                style={({ pressed }) => [
-                  styles.filterPill,
-                  logsRoomNumber == null && styles.filterPillActive,
-                  pressed && { opacity: 0.9 },
-                ]}
+                style={({ pressed }) => [styles.filterPill, pressed && { opacity: 0.9 }]}
                 hitSlop={8}
               >
-                <Text style={[styles.filterPillText, logsRoomNumber == null && styles.filterPillTextActive]}>
-                  All Rooms
-                </Text>
+                <Text style={styles.filterPillText}>All Rooms</Text>
               </Pressable>
-
               <View style={styles.tabContainer}>
                 <Pressable
                   onPress={() => setLogsType("food")}
@@ -1324,7 +1469,6 @@ export default function RoomsScreen() {
                   </Text>
                 </Pressable>
               </View>
-
               {(selectedOrderId || selectedRequestId) && (
                 <Pressable
                   onPress={clearSelection}
@@ -1335,7 +1479,6 @@ export default function RoomsScreen() {
                 </Pressable>
               )}
             </View>
-
             {/* Selected Order/Request Details */}
             {selectedOrder ? (
               <View style={styles.detailCard}>
@@ -1343,21 +1486,12 @@ export default function RoomsScreen() {
                   <View style={styles.detailRoomPill}>
                     <Text style={styles.detailRoomPillText}>Room {selectedOrder.roomNumber ?? "-"}</Text>
                   </View>
-
-                  <View
-                    style={[
-                      styles.detailStatusPill,
-                      {
-                        backgroundColor: "rgba(37, 99, 235, 0.10)",
-                      },
-                    ]}
-                  >
+                  <View style={[styles.detailStatusPill, { backgroundColor: "rgba(37, 99, 235, 0.10)" }]}>
                     <Text style={[styles.detailStatusText, { color: getOrderStatusColor(selectedOrder.status) }]}>
                       {getOrderStatusText(selectedOrder.status)}
                     </Text>
                   </View>
                 </View>
-
                 <View style={styles.detailActionRow}>
                   <Text style={styles.detailTitle}>Total: {formatINR(getOrderTotal(selectedOrder))}</Text>
                   <Pressable
@@ -1368,22 +1502,19 @@ export default function RoomsScreen() {
                     <Text style={styles.detailDeleteText}>Delete</Text>
                   </Pressable>
                 </View>
-
                 <Text style={styles.detailLine}>
                   Guest: {selectedOrder.guestName ?? "-"}
                   {selectedOrder.guestMobile ? ` • ${selectedOrder.guestMobile}` : ""}
                 </Text>
-
                 <Text style={styles.detailTime}>Time: {formatOrderTime(selectedOrder.createdAt)}</Text>
                 <Text style={styles.detailMeta}>Source: {selectedOrder.source ?? "—"}</Text>
-
                 <View style={{ marginTop: 10 }}>
                   {normalizeItems((selectedOrder as any).items).length ? (
                     normalizeItems((selectedOrder as any).items).map((it: any, idx: number) => {
                       const qty = toNum(it?.qty) || toNum(it?.quantity) || 1;
                       const price = toNum(it?.price) || toNum(it?.unitPrice) || toNum(it?.rate) || 0;
-                      const line = toNum(it?.lineTotal) || toNum(it?.total) || toNum(it?.amount) || qty * price;
-
+                      const line =
+                        toNum(it?.lineTotal) || toNum(it?.total) || toNum(it?.amount) || qty * price;
                       return (
                         <View key={idx} style={styles.itemRow}>
                           <Text style={styles.itemLeft} numberOfLines={1}>
@@ -1405,7 +1536,6 @@ export default function RoomsScreen() {
                     <Text style={styles.noItemsText}>No item details found for this order.</Text>
                   )}
                 </View>
-
                 {selectedOrder.status &&
                   !["completed", "cancelled"].includes((selectedOrder.status || "").toLowerCase()) && (
                     <Pressable
@@ -1423,14 +1553,12 @@ export default function RoomsScreen() {
                   <View style={styles.detailRoomPill}>
                     <Text style={styles.detailRoomPillText}>Room {selectedRequest.roomNumber ?? "-"}</Text>
                   </View>
-
                   <View style={[styles.detailStatusPill, { backgroundColor: "rgba(37, 99, 235, 0.10)" }]}>
                     <Text style={[styles.detailStatusText, { color: getServiceStatusColor(selectedRequest.status) }]}>
                       {getServiceStatusText(selectedRequest.status)}
                     </Text>
                   </View>
                 </View>
-
                 <View style={styles.detailActionRow}>
                   <Text style={styles.detailTitle}>
                     {selectedRequest.type || "Service Request"}
@@ -1446,14 +1574,11 @@ export default function RoomsScreen() {
                     <Text style={styles.detailDeleteText}>Delete</Text>
                   </Pressable>
                 </View>
-
                 <Text style={styles.detailLine}>
                   Guest: {selectedRequest.guestName ?? "-"}
                   {selectedRequest.guestMobile ? ` • ${selectedRequest.guestMobile}` : ""}
                 </Text>
-
                 <Text style={styles.detailTime}>Time: {formatOrderTime(selectedRequest.createdAt)}</Text>
-
                 <View style={styles.chargeRow}>
                   <Text style={styles.chargeLabel}>Charges:</Text>
                   <Text style={styles.chargeAmount}>
@@ -1461,14 +1586,12 @@ export default function RoomsScreen() {
                     {selectedRequest.currency && ` ${selectedRequest.currency}`}
                   </Text>
                 </View>
-
                 {selectedRequest.notes && (
                   <View style={styles.notesBox}>
                     <Text style={styles.notesLabel}>Notes:</Text>
                     <Text style={styles.notesText}>{selectedRequest.notes}</Text>
                   </View>
                 )}
-
                 {selectedRequest.status &&
                   !["completed", "cancelled"].includes((selectedRequest.status || "").toLowerCase()) && (
                     <Pressable
@@ -1481,7 +1604,6 @@ export default function RoomsScreen() {
                   )}
               </View>
             ) : null}
-
             {/* List of Orders/Requests */}
             <ScrollView style={styles.modalList} contentContainerStyle={{ paddingBottom: 16 }} showsVerticalScrollIndicator={false}>
               {logsType === "food" ? (
@@ -1510,7 +1632,6 @@ export default function RoomsScreen() {
                         <View style={styles.requestRoomPill}>
                           <Text style={styles.requestRoomPillText}>Room {o.roomNumber ?? "-"}</Text>
                         </View>
-
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <View style={styles.requestTopRow}>
                             <Text style={styles.requestTitle} numberOfLines={1}>
@@ -1529,7 +1650,6 @@ export default function RoomsScreen() {
                           </Text>
                         </View>
                       </View>
-
                       <View style={styles.requestRightActions}>
                         <Pressable
                           onPress={() => deleteFoodOrder(o.id)}
@@ -1567,7 +1687,6 @@ export default function RoomsScreen() {
                       <View style={styles.requestRoomPill}>
                         <Text style={styles.requestRoomPillText}>Room {r.roomNumber ?? "-"}</Text>
                       </View>
-
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <View style={styles.requestTopRow}>
                           <Text style={styles.requestTitle} numberOfLines={1}>
@@ -1589,7 +1708,6 @@ export default function RoomsScreen() {
                         </Text>
                       </View>
                     </View>
-
                     <View style={styles.requestRightActions}>
                       <Pressable
                         onPress={() => deleteServiceRequest(r.id)}
@@ -1609,7 +1727,10 @@ export default function RoomsScreen() {
 
       {/* EDIT ROOM MODAL */}
       <Modal visible={editModalOpen} animationType="slide" transparent onRequestClose={closeEditModal}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View style={styles.modalHeaderLeft}>
@@ -1628,7 +1749,6 @@ export default function RoomsScreen() {
                 <Ionicons name="close" size={18} color="#6B7280" />
               </Pressable>
             </View>
-
             <ScrollView contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Guest Name</Text>
@@ -1643,7 +1763,6 @@ export default function RoomsScreen() {
                   />
                 </View>
               </View>
-
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Mobile Number</Text>
                 <View style={styles.inputWrapper}>
@@ -1661,11 +1780,9 @@ export default function RoomsScreen() {
                   />
                 </View>
               </View>
-
               {/* Check-in Date & Time */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Check-in Date & Time</Text>
-
                 {Platform.OS === "web" ? (
                   <View style={[styles.inputWrapper, { cursor: "pointer" } as any]}>
                     <Ionicons name="calendar-outline" size={18} color="#9CA3AF" style={{ marginLeft: 12 }} />
@@ -1708,7 +1825,6 @@ export default function RoomsScreen() {
                         });
                         return;
                       }
-
                       // iOS
                       setIosTempEditCheckin(editCheckinDate ?? new Date());
                       setShowEditCheckinPicker(true);
@@ -1721,7 +1837,6 @@ export default function RoomsScreen() {
                   </Pressable>
                 )}
               </View>
-
               {/* Check-out Date & Time */}
               <View style={styles.inputGroup}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -1741,11 +1856,12 @@ export default function RoomsScreen() {
                         borderRadius: 6,
                       }}
                     >
-                      <Text style={{ fontSize: 11, fontWeight: "700", color: "#2563EB" }}>Set Tomorrow 11AM</Text>
+                      <Text style={{ fontSize: 11, fontWeight: "700", color: "#2563EB" }}>
+                        Set Tomorrow 11AM
+                      </Text>
                     </Pressable>
                   )}
                 </View>
-
                 {Platform.OS === "web" ? (
                   <View style={[styles.inputWrapper, { cursor: "pointer" } as any]}>
                     <Ionicons name="calendar-outline" size={18} color="#9CA3AF" style={{ marginLeft: 12 }} />
@@ -1774,7 +1890,6 @@ export default function RoomsScreen() {
                         });
                         return;
                       }
-
                       // iOS
                       setIosTempEditCheckout(checkoutDate ?? new Date());
                       setShowEditCheckoutPicker(true);
@@ -1787,7 +1902,6 @@ export default function RoomsScreen() {
                   </Pressable>
                 )}
               </View>
-
               <Pressable
                 onPress={saveRoomDetails}
                 disabled={initializing}
@@ -1807,7 +1921,6 @@ export default function RoomsScreen() {
                 )}
               </Pressable>
             </ScrollView>
-
             {/* iOS bottom-sheet pickers (inside edit modal) */}
             {Platform.OS === "ios" && (
               <Modal
@@ -1817,7 +1930,10 @@ export default function RoomsScreen() {
                 onRequestClose={() => setShowEditCheckinPicker(false)}
               >
                 <View style={styles.pickerOverlay}>
-                  <Pressable style={styles.pickerBackdrop} onPress={() => setShowEditCheckinPicker(false)} />
+                  <Pressable
+                    style={styles.pickerBackdrop}
+                    onPress={() => setShowEditCheckinPicker(false)}
+                  />
                   <View style={styles.pickerSheet}>
                     <View style={styles.pickerHeader}>
                       <Pressable onPress={() => setShowEditCheckinPicker(false)}>
@@ -1838,7 +1954,6 @@ export default function RoomsScreen() {
                         <Text style={[styles.pickerAction, styles.pickerActionPrimary]}>Done</Text>
                       </Pressable>
                     </View>
-
                     <DateTimePicker
                       value={iosTempEditCheckin}
                       mode="datetime"
@@ -1850,7 +1965,6 @@ export default function RoomsScreen() {
                 </View>
               </Modal>
             )}
-
             {Platform.OS === "ios" && (
               <Modal
                 visible={showEditCheckoutPicker}
@@ -1859,7 +1973,10 @@ export default function RoomsScreen() {
                 onRequestClose={() => setShowEditCheckoutPicker(false)}
               >
                 <View style={styles.pickerOverlay}>
-                  <Pressable style={styles.pickerBackdrop} onPress={() => setShowEditCheckoutPicker(false)} />
+                  <Pressable
+                    style={styles.pickerBackdrop}
+                    onPress={() => setShowEditCheckoutPicker(false)}
+                  />
                   <View style={styles.pickerSheet}>
                     <View style={styles.pickerHeader}>
                       <Pressable onPress={() => setShowEditCheckoutPicker(false)}>
@@ -1875,7 +1992,6 @@ export default function RoomsScreen() {
                         <Text style={[styles.pickerAction, styles.pickerActionPrimary]}>Done</Text>
                       </Pressable>
                     </View>
-
                     <DateTimePicker
                       value={iosTempEditCheckout}
                       mode="datetime"
@@ -1898,7 +2014,6 @@ export default function RoomsScreen() {
           <View style={styles.bgCircle2} />
           <View style={styles.bgCircle3} />
         </View>
-
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={styles.greeting} numberOfLines={1}>
@@ -1908,7 +2023,6 @@ export default function RoomsScreen() {
               Room Management
             </Text>
           </View>
-
           <View style={styles.headerRight}>
             <View style={styles.roleBadge}>
               <Ionicons name="business-outline" size={14} color="#2563EB" />
@@ -1916,7 +2030,6 @@ export default function RoomsScreen() {
             </View>
           </View>
         </View>
-
         {/* SEARCH BAR */}
         <View style={styles.searchContainer}>
           <Ionicons name="search" size={20} color="#9CA3AF" />
@@ -1934,7 +2047,6 @@ export default function RoomsScreen() {
             </Pressable>
           ) : null}
         </View>
-
         {/* Global Logs Buttons */}
         <View style={styles.globalLogsContainer}>
           <Pressable
@@ -1949,7 +2061,6 @@ export default function RoomsScreen() {
               </View>
             )}
           </Pressable>
-
           <Pressable
             onPress={() => openLogs(null, "services")}
             style={({ pressed }) => [styles.globalLogsBtn, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
@@ -1963,7 +2074,6 @@ export default function RoomsScreen() {
             )}
           </Pressable>
         </View>
-
         {/* FLOOR-WISE DISPLAY */}
         {floors.length === 0 ? (
           <View style={styles.emptyState}>
@@ -1974,15 +2084,11 @@ export default function RoomsScreen() {
           floors.map(([floor, { occupied, available }]) => {
             const isOpen = openFloors[floor] ?? false;
             const totalRooms = occupied.length + available.length;
-
             return (
               <View key={floor} style={styles.floorCard}>
                 <Pressable
                   onPress={() => setOpenFloors((p) => ({ ...p, [floor]: !isOpen }))}
-                  style={({ pressed }) => [
-                    styles.floorHeader,
-                    pressed && { opacity: 0.95 },
-                  ]}
+                  style={({ pressed }) => [styles.floorHeader, pressed && { opacity: 0.95 }]}
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={styles.floorTitle}>{floorLabel(floor)}</Text>
@@ -1992,7 +2098,6 @@ export default function RoomsScreen() {
                   </View>
                   <Ionicons name={isOpen ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
                 </Pressable>
-
                 {isOpen && (
                   <View style={styles.floorBody}>
                     {/* Occupied Rooms */}
@@ -2000,12 +2105,23 @@ export default function RoomsScreen() {
                       <>
                         <Text style={styles.sectionTitle}>Occupied</Text>
                         {occupied.map((room) => {
-                          const roomFoodCount = foodCountForRoom(room.roomNumber, room.guestId, room.assignedAt);
-                          const roomFoodTotal = totalForRoom(room.roomNumber, room.guestId, room.assignedAt);
+                          const roomFoodCount = foodCountForRoom(
+                            room.roomNumber,
+                            room.guestId,
+                            room.assignedAt
+                          );
+                          const roomFoodTotal = totalForRoom(
+                            room.roomNumber,
+                            room.guestId,
+                            room.assignedAt
+                          );
                           const roomServiceCount = serviceCountForRoom(room.roomNumber, room.assignedAt);
                           const roomServiceTotal = serviceChargesForRoom(room.roomNumber, room.assignedAt);
-                          const roomTotalCharges = totalChargesForRoom(room.roomNumber, room.guestId, room.assignedAt);
-
+                          const roomTotalCharges = totalChargesForRoom(
+                            room.roomNumber,
+                            room.guestId,
+                            room.assignedAt
+                          );
                           return (
                             <View key={room.id} style={styles.occupiedCard}>
                               <View style={styles.cardHeader}>
@@ -2014,7 +2130,6 @@ export default function RoomsScreen() {
                                   <Text style={styles.roomNumber} numberOfLines={1}>
                                     Room {room.roomNumber}
                                   </Text>
-
                                   <View style={styles.roomLogsButtons}>
                                     <Pressable
                                       onPress={() => openLogs(room.roomNumber, "food")}
@@ -2031,7 +2146,6 @@ export default function RoomsScreen() {
                                         </View>
                                       ) : null}
                                     </Pressable>
-
                                     <Pressable
                                       onPress={() => openLogs(room.roomNumber, "services")}
                                       style={({ pressed }) => [
@@ -2049,67 +2163,65 @@ export default function RoomsScreen() {
                                     </Pressable>
                                   </View>
                                 </View>
-
                                 <View style={styles.statusBadge}>
                                   <Text style={styles.statusText}>OCCUPIED</Text>
                                 </View>
                               </View>
-
                               <View style={styles.guestInfo}>
                                 <View style={styles.infoRow}>
                                   <Ionicons name="person" size={14} color="#6B7280" />
                                   <Text style={styles.infoText}>{room.guestName || "No guest name"}</Text>
                                 </View>
-
                                 {room.guestMobile && (
                                   <View style={styles.infoRow}>
                                     <Ionicons name="call" size={14} color="#6B7280" />
                                     <Text style={styles.infoText}>{room.guestMobile}</Text>
                                   </View>
                                 )}
-
                                 <View style={styles.infoRow}>
                                   <Ionicons name="restaurant-outline" size={14} color="#6B7280" />
-                                  <Text style={styles.infoText}>Meal Plan: {prettyMealText(room.mealPlan)}</Text>
+                                  <Text style={styles.infoText}>
+                                    Meal Plan: {prettyMealText(room.mealPlan)}
+                                  </Text>
                                 </View>
-
                                 <View style={styles.infoRow}>
                                   <Ionicons name="cash-outline" size={14} color="#6B7280" />
                                   <Text style={styles.infoText}>
                                     Food Orders: {roomFoodCount} (₹{roomFoodTotal.toFixed(2)})
                                   </Text>
                                 </View>
-
                                 <View style={styles.infoRow}>
                                   <Ionicons name="construct-outline" size={14} color="#6B7280" />
                                   <Text style={styles.infoText}>
                                     Services: {roomServiceCount} (₹{roomServiceTotal.toFixed(2)})
                                   </Text>
                                 </View>
-
                                 <View style={styles.infoRow}>
                                   <Ionicons name="card-outline" size={14} color="#2563EB" />
-                                  <Text style={[styles.infoText, { fontWeight: "900", color: "#2563EB" }]}>
+                                  <Text
+                                    style={[styles.infoText, { fontWeight: "900", color: "#2563EB" }]}
+                                  >
                                     Total Charges: ₹{roomTotalCharges.toFixed(2)}
                                   </Text>
                                 </View>
-
                                 {room.checkoutAt && (
                                   <View style={styles.infoRow}>
                                     <Ionicons name="timer" size={14} color="#2563EB" />
-                                    <Text style={[styles.infoText, { color: "#2563EB", fontWeight: "700" }]}>
+                                    <Text
+                                      style={[styles.infoText, { color: "#2563EB", fontWeight: "700" }]}
+                                    >
                                       Checkout: {getRemainingTime(room.checkoutAt)}
                                     </Text>
                                   </View>
                                 )}
-
                                 {room.assignedAt && (
                                   <View style={styles.infoRow}>
                                     <Ionicons name="time-outline" size={14} color="#6B7280" />
-                                    <Text style={styles.infoText}>Checked-in: {formatDateTime(room.assignedAt)}</Text>
+                                    <Text style={styles.infoText}>
+                                      Checked-in: {formatDateTime(room.assignedAt)}
+                                    </Text>
                                   </View>
                                 )}
-
                                 {(roomFoodCount > 0 || roomServiceCount > 0) && (
                                   <View style={styles.pendingStrip}>
                                     <Ionicons name="receipt-outline" size={16} color="#2563EB" />
@@ -2119,14 +2231,16 @@ export default function RoomsScreen() {
                                   </View>
                                 )}
                               </View>
-
                               <Pressable
-                                style={({ pressed }) => [styles.checkoutBtn, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
+                                style={({ pressed }) => [
+                                  styles.checkoutBtn,
+                                  pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+                                ]}
                                 onPress={() => checkoutRoom(room.id, room.roomNumber)}
                               >
                                 <Ionicons name="log-out" size={16} color="#fff" />
                                 <Text style={styles.checkoutText}>
-                                  Checkout & Delete All Orders (₹{roomTotalCharges.toFixed(2)})
+                                  View Bill & Checkout (₹{roomTotalCharges.toFixed(2)})
                                 </Text>
                               </Pressable>
                             </View>
@@ -2134,7 +2248,6 @@ export default function RoomsScreen() {
                         })}
                       </>
                     )}
-
                     {/* Available Rooms */}
                     {available.length > 0 && (
                       <>
@@ -2144,7 +2257,10 @@ export default function RoomsScreen() {
                           {available.map((room) => (
                             <Pressable
                               key={room.id}
-                              style={({ pressed }) => [styles.availableCard, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
+                              style={({ pressed }) => [
+                                styles.availableCard,
+                                pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+                              ]}
                               onPress={() => openEditModal(room)}
                             >
                               <View style={styles.availableIcon}>
@@ -2174,7 +2290,6 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F9FAFB" },
   container: { flex: 1, backgroundColor: "#F9FAFB" },
   content: { padding: 16 },
-
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -2187,7 +2302,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#6B7280",
   },
-
   backgroundDecor: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
   bgCircle1: {
     position: "absolute",
@@ -2216,7 +2330,6 @@ const styles = StyleSheet.create({
     borderRadius: 70,
     backgroundColor: "rgba(37, 99, 235, 0.06)",
   },
-
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -2249,7 +2362,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 1.2,
   },
-
   globalLogsContainer: {
     flexDirection: "row",
     gap: 12,
@@ -2297,7 +2409,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     fontSize: 10,
   },
-
   floorCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
@@ -2323,9 +2434,14 @@ const styles = StyleSheet.create({
   floorTitle: { fontSize: 16, fontWeight: "900", color: "#111827" },
   floorSub: { marginTop: 3, fontSize: 12, fontWeight: "700", color: "#6B7280" },
   floorBody: { padding: 14 },
-
-  sectionTitle: { fontSize: 12, fontWeight: "900", color: "#6B7280", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 },
-
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#6B7280",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginBottom: 10,
+  },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -2349,7 +2465,6 @@ const styles = StyleSheet.create({
     color: "#111827",
     padding: 0,
   },
-
   emptyState: {
     backgroundColor: "#FFFFFF",
     padding: 18,
@@ -2359,7 +2474,6 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
   },
   emptyText: { color: "#9CA3AF", marginTop: 6, fontWeight: "700" },
-
   occupiedCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -2388,7 +2502,6 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   roomNumber: { fontSize: 16, fontWeight: "700", color: "#111827", flexShrink: 1 },
-
   roomLogsButtons: { flexDirection: "row", gap: 6, marginLeft: 4 },
   roomLogsInlineBtn: {
     width: 34,
@@ -2416,7 +2529,6 @@ const styles = StyleSheet.create({
     borderColor: "#FFFFFF",
   },
   roomLogsBadgeText: { color: "#FFFFFF", fontWeight: "900", fontSize: 9 },
-
   statusBadge: {
     backgroundColor: "rgba(220, 38, 38, 0.1)",
     paddingHorizontal: 10,
@@ -2430,7 +2542,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 1.5,
   },
-
   guestInfo: { marginBottom: 12 },
   infoRow: {
     flexDirection: "row",
@@ -2444,7 +2555,6 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flexShrink: 1,
   },
-
   pendingStrip: {
     marginTop: 10,
     flexDirection: "row",
@@ -2463,7 +2573,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     flexShrink: 1,
   },
-
   checkoutBtn: {
     backgroundColor: "#DC2626",
     flexDirection: "row",
@@ -2479,7 +2588,6 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   checkoutText: { color: "#FFFFFF", fontWeight: "700" },
-
   availableRoomsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -2522,7 +2630,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 1.5,
   },
-
   // Modal base
   modalOverlay: {
     flex: 1,
@@ -2572,7 +2679,6 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 16, fontWeight: "900", color: "#111827" },
   modalSubtitle: { fontSize: 12, color: "#6B7280", marginTop: 2 },
-
   deleteAllBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -2596,7 +2702,6 @@ const styles = StyleSheet.create({
   deleteAllTextDisabled: {
     color: "#9CA3AF",
   },
-
   modalCloseBtn: {
     width: 38,
     height: 38,
@@ -2607,7 +2712,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   modalFilterRow: {
     paddingHorizontal: 14,
     paddingTop: 12,
@@ -2631,7 +2735,6 @@ const styles = StyleSheet.create({
   },
   filterPillText: { fontSize: 12, fontWeight: "800", color: "#6B7280" },
   filterPillTextActive: { color: "#2563EB" },
-
   tabContainer: { flexDirection: "row", gap: 8, marginLeft: "auto", marginRight: 10 },
   tabButton: {
     paddingHorizontal: 12,
@@ -2647,7 +2750,6 @@ const styles = StyleSheet.create({
   },
   tabButtonText: { fontSize: 12, fontWeight: "800", color: "#6B7280" },
   tabButtonTextActive: { color: "#2563EB" },
-
   detailCard: {
     marginHorizontal: 14,
     marginTop: 8,
@@ -2702,7 +2804,6 @@ const styles = StyleSheet.create({
   detailLine: { marginTop: 6, fontSize: 13, color: "#374151", fontWeight: "700" },
   detailTime: { marginTop: 8, fontSize: 12, color: "#2563EB", fontWeight: "900" },
   detailMeta: { marginTop: 4, fontSize: 12, color: "#6B7280", fontWeight: "700" },
-
   chargeRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2717,7 +2818,6 @@ const styles = StyleSheet.create({
   },
   chargeLabel: { fontSize: 14, fontWeight: "800", color: "#111827" },
   chargeAmount: { fontSize: 16, fontWeight: "900", color: "#2563EB" },
-
   notesBox: {
     marginTop: 10,
     padding: 10,
@@ -2728,7 +2828,6 @@ const styles = StyleSheet.create({
   },
   notesLabel: { fontSize: 12, fontWeight: "900", color: "#F59E0B", marginBottom: 4 },
   notesText: { fontSize: 13, color: "#6B7280", fontWeight: "700" },
-
   itemRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2739,7 +2838,6 @@ const styles = StyleSheet.create({
   itemLeft: { flex: 1, color: "#111827", fontWeight: "800", fontSize: 12 },
   itemRight: { color: "#2563EB", fontWeight: "900", fontSize: 12 },
   noItemsText: { marginTop: 6, color: "#6B7280", fontWeight: "700", fontSize: 12 },
-
   completeBtn: {
     marginTop: 12,
     backgroundColor: "#16A34A",
@@ -2751,7 +2849,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   completeText: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
-
   modalList: { paddingHorizontal: 14, paddingTop: 6 },
   modalEmpty: {
     marginTop: 14,
@@ -2763,7 +2860,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalEmptyText: { marginTop: 8, color: "#9CA3AF", fontWeight: "700" },
-
   requestRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2811,7 +2907,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   // EDIT MODAL FIELDS
   inputGroup: { marginBottom: 16 },
   label: { fontSize: 13, fontWeight: "700", color: "#374151", marginBottom: 8 },
@@ -2861,7 +2956,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
   },
-
   // iOS picker sheet
   pickerOverlay: {
     flex: 1,
@@ -2900,7 +2994,6 @@ const styles = StyleSheet.create({
   pickerActionPrimary: {
     color: "#2563EB",
   },
-
   // Confirm modal
   confirmOverlay: {
     flex: 1,
@@ -2978,5 +3071,153 @@ const styles = StyleSheet.create({
   confirmBtnText: {
     color: "#FFFFFF",
     fontWeight: "900",
+  },
+  // ✅ BILL MODAL STYLES
+  billLoading: {
+    paddingVertical: 40,
+    alignItems: "center",
+  },
+  billLoadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#6B7280",
+  },
+  billSection: {
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  billSectionTitle: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  billInfoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  billInfoLabel: {
+    fontSize: 13,
+    color: "#6B7280",
+    fontWeight: "600",
+  },
+  billInfoValue: {
+    fontSize: 13,
+    color: "#111827",
+    fontWeight: "700",
+  },
+  billItemRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  billItemName: {
+    fontSize: 13,
+    color: "#374151",
+    fontWeight: "600",
+    flex: 1,
+  },
+  billItemAmount: {
+    fontSize: 13,
+    color: "#111827",
+    fontWeight: "700",
+  },
+  billNoItems: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    fontWeight: "600",
+    fontStyle: "italic",
+    paddingVertical: 6,
+  },
+  billSubtotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+    marginTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+  billSubtotalLabel: {
+    fontSize: 13,
+    color: "#6B7280",
+    fontWeight: "700",
+  },
+  billSubtotalAmount: {
+    fontSize: 13,
+    color: "#2563EB",
+    fontWeight: "800",
+  },
+  billSummary: {
+    backgroundColor: "rgba(37, 99, 235, 0.06)",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  billSummaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  billSummaryLabel: {
+    fontSize: 13,
+    color: "#374151",
+    fontWeight: "700",
+  },
+  billSummaryAmount: {
+    fontSize: 13,
+    color: "#111827",
+    fontWeight: "800",
+  },
+  billGrandTotalRow: {
+    borderTopWidth: 1,
+    borderTopColor: "rgba(37, 99, 235, 0.2)",
+    paddingTop: 10,
+    marginTop: 4,
+  },
+  billGrandTotalLabel: {
+    fontSize: 15,
+    color: "#111827",
+    fontWeight: "900",
+  },
+  billGrandTotalAmount: {
+    fontSize: 18,
+    color: "#2563EB",
+    fontWeight: "900",
+  },
+  billFooter: {
+    fontSize: 11,
+    color: "#9CA3AF",
+    fontWeight: "600",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  billProceedBtn: {
+    backgroundColor: "#16A34A",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: 14,
+    gap: 8,
+    shadowColor: "#16A34A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  billProceedText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 15,
   },
 });
