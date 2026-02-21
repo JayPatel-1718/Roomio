@@ -45,6 +45,7 @@ type Room = {
   guestId?: string;
   mealPlan?: Meal[];
   assignedAt?: Timestamp;
+  roomRate?: number; // Custom room rate per night
 };
 type FoodOrder = {
   id: string;
@@ -182,6 +183,8 @@ export default function RoomsScreen() {
     tomorrow.setHours(11, 0, 0, 0);
     return tomorrow;
   });
+  // ✅ Room rate input
+  const [roomRate, setRoomRate] = useState<string>("1500");
   // iOS picker modals inside Edit Room modal
   const [showEditCheckinPicker, setShowEditCheckinPicker] = useState(false);
   const [showEditCheckoutPicker, setShowEditCheckoutPicker] = useState(false);
@@ -202,6 +205,8 @@ export default function RoomsScreen() {
   const [billData, setBillData] = useState<BillData | null>(null);
   const [generatingBill, setGeneratingBill] = useState(false);
   const [pendingCheckoutRoom, setPendingCheckoutRoom] = useState<{ id: string; roomNumber: number } | null>(null);
+  // ✅ Room rate input in bill modal
+  const [billRoomRate, setBillRoomRate] = useState<string>("1500");
 
   const occupiedRoomsRef = useRef<Room[]>([]);
   useEffect(() => {
@@ -529,14 +534,27 @@ Check permissions for /serviceRequests.`
     return orders.reduce((sum, o) => sum + getOrderTotal(o), 0);
   };
 
-  const totalChargesForRoom = (roomNumber: number, guestId?: string, roomAssignedAt?: Timestamp) => {
+  const totalChargesForRoom = (roomNumber: number, guestId?: string, roomAssignedAt?: Timestamp, customRoomRate?: number) => {
     const foodTotal = totalForRoom(roomNumber, guestId, roomAssignedAt);
     const serviceTotal = serviceChargesForRoom(roomNumber, roomAssignedAt);
-    return foodTotal + serviceTotal;
+
+    // Calculate room total if room exists
+    const room = occupiedRooms.find(r => r.roomNumber === roomNumber);
+    let roomTotal = 0;
+    if (room && room.assignedAt && room.checkoutAt) {
+      const checkIn = room.assignedAt.toDate();
+      const checkOut = room.checkoutAt.toDate();
+      const diffMs = checkOut.getTime() - checkIn.getTime();
+      const nights = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+      const rate = customRoomRate || room.roomRate || 1500;
+      roomTotal = rate * nights;
+    }
+
+    return foodTotal + serviceTotal + roomTotal;
   };
 
   // ✅ GENERATE BILL DATA
-  const generateBillData = (room: Room): BillData => {
+  const generateBillData = (room: Room, customRate?: number): BillData => {
     const guestId = room.guestId || null;
     const roomAssignedAt = room.assignedAt;
     const foodOrdersList = getCurrentGuestFoodOrders(room.roomNumber, guestId, roomAssignedAt);
@@ -554,9 +572,9 @@ Check permissions for /serviceRequests.`
       nights = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
     }
 
-    // Default room rate (can be customized later)
-    const roomRate = 1500; // ₹1500 per night default
-    const roomTotal = roomRate * nights;
+    // Use custom rate if provided, otherwise room rate or default
+    const rate = customRate || room.roomRate || 1500;
+    const roomTotal = rate * nights;
 
     const subtotal = roomTotal + foodTotal + serviceTotal;
     const taxRate = 0.18; // 18% GST
@@ -570,7 +588,7 @@ Check permissions for /serviceRequests.`
       checkIn: room.assignedAt?.toDate() || null,
       checkOut: room.checkoutAt?.toDate() || null,
       nights,
-      roomRate,
+      roomRate: rate,
       roomTotal,
       foodOrders: foodOrdersList.map((o) => ({
         name: getOrderSummaryText(o),
@@ -595,11 +613,26 @@ Check permissions for /serviceRequests.`
     const room = occupiedRooms.find((r) => r.id === roomId);
     if (!room) return;
     setGeneratingBill(true);
-    const bill = generateBillData(room);
+    // Set initial room rate from room data or default
+    setBillRoomRate(room.roomRate?.toString() || "1500");
+    const bill = generateBillData(room, room.roomRate || 1500);
     setBillData(bill);
     setPendingCheckoutRoom({ id: roomId, roomNumber });
     setBillModalOpen(true);
     setGeneratingBill(false);
+  };
+
+  // ✅ UPDATE BILL WITH NEW ROOM RATE
+  const updateBillWithRate = (rateStr: string) => {
+    setBillRoomRate(rateStr);
+    const rate = parseFloat(rateStr);
+    if (!isNaN(rate) && rate > 0 && pendingCheckoutRoom) {
+      const room = occupiedRooms.find((r) => r.id === pendingCheckoutRoom.id);
+      if (room) {
+        const updatedBill = generateBillData(room, rate);
+        setBillData(updatedBill);
+      }
+    }
   };
 
   // ✅ CLOSE BILL MODAL
@@ -607,13 +640,14 @@ Check permissions for /serviceRequests.`
     setBillModalOpen(false);
     setBillData(null);
     setPendingCheckoutRoom(null);
+    setBillRoomRate("1500");
   };
 
   // ✅ PROCEED TO CHECKOUT (from bill modal)
   const proceedToCheckout = () => {
-    if (!pendingCheckoutRoom) return;
+    if (!pendingCheckoutRoom || !billData) return;
     closeBillModal();
-    checkoutRoomConfirmed(pendingCheckoutRoom.id, pendingCheckoutRoom.roomNumber);
+    checkoutRoomConfirmed(pendingCheckoutRoom.id, pendingCheckoutRoom.roomNumber, parseFloat(billRoomRate) || 1500);
   };
 
   // Filter food orders for logs modal
@@ -660,6 +694,7 @@ Check permissions for /serviceRequests.`
     setEditingRoom(room);
     setGuestName("");
     setGuestMobile("");
+    setRoomRate(room.roomRate?.toString() || "1500");
     const now = new Date();
     setEditCheckinDate(now);
     const tomorrow = new Date();
@@ -673,6 +708,7 @@ Check permissions for /serviceRequests.`
     setEditingRoom(null);
     setGuestName("");
     setGuestMobile("");
+    setRoomRate("1500");
     setEditCheckinDate(new Date());
     setCheckoutDate(null);
     setShowEditCheckinPicker(false);
@@ -700,6 +736,13 @@ Check permissions for /serviceRequests.`
       Alert.alert("Invalid Checkout", "Checkout must be in the future");
       return;
     }
+
+    const rate = parseFloat(roomRate);
+    if (isNaN(rate) || rate <= 0) {
+      Alert.alert("Invalid Rate", "Please enter a valid room rate per night");
+      return;
+    }
+
     setInitializing(true);
     try {
       const uid = user.uid;
@@ -729,6 +772,7 @@ Check permissions for /serviceRequests.`
         checkoutAt: Timestamp.fromDate(checkoutDate),
         guestId: guestRef.id,
         adminEmail: currentUserEmail,
+        roomRate: rate,
         updatedAt: serverTimestamp(),
       });
       Alert.alert("✅ Success", `Room ${editingRoom.roomNumber} initialized for ${guestName}`);
@@ -878,21 +922,32 @@ This action CANNOT be undone.`,
   };
 
   // ✅ CHECKOUT ROOM - CONFIRMED (after bill preview)
-  const checkoutRoomConfirmed = async (roomId: string, roomNumber: number) => {
+  const checkoutRoomConfirmed = async (roomId: string, roomNumber: number, finalRoomRate: number) => {
     if (!user) return;
     const uid = user.uid;
     const room = occupiedRooms.find((r) => r.id === roomId);
     const guestId = room?.guestId || null;
     const roomAssignedAt = room?.assignedAt;
+
+    // Calculate all totals with the final room rate
     const foodTotal = totalForRoom(roomNumber, guestId, roomAssignedAt);
     const serviceTotal = serviceChargesForRoom(roomNumber, roomAssignedAt);
-    const totalCharges = foodTotal + serviceTotal;
+
+    // Calculate room total with custom rate
+    let roomTotal = 0;
+    if (room && room.assignedAt && room.checkoutAt) {
+      const checkIn = room.assignedAt.toDate();
+      const checkOut = room.checkoutAt.toDate();
+      const diffMs = checkOut.getTime() - checkIn.getTime();
+      const nights = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+      roomTotal = finalRoomRate * nights;
+    }
+
+    const totalCharges = foodTotal + serviceTotal + roomTotal;
 
     askConfirm({
       title: "Confirm Checkout",
-      message: `Checkout Room ${roomNumber}?\nGuest: ${room?.guestName || "Unknown"}\nTotal Charges: ₹${totalCharges.toFixed(
-        2
-      )}\nThis will DELETE all food orders and service requests for this room.`,
+      message: `Checkout Room ${roomNumber}?\nGuest: ${room?.guestName || "Unknown"}\nRoom Charges: ₹${roomTotal.toFixed(2)}\nFood: ₹${foodTotal.toFixed(2)}\nServices: ₹${serviceTotal.toFixed(2)}\nTOTAL: ₹${totalCharges.toFixed(2)}\n\nThis will DELETE all food orders and service requests for this room.`,
       confirmText: "Checkout & Delete",
       variant: "destructive",
       onConfirm: async () => {
@@ -958,7 +1013,7 @@ This action CANNOT be undone.`,
           await batch.commit();
           Alert.alert(
             "✅ Success",
-            `Room ${roomNumber} checked out.\nDeleted ${foodOrdersSnapshot.size} orders and ${serviceRequestsSnapshot.size} service requests.\nTotal charges: ₹${totalCharges.toFixed(2)}`
+            `Room ${roomNumber} checked out.\nTotal Charges: ₹${totalCharges.toFixed(2)}`
           );
         } catch (e: any) {
           console.error("Checkout failed:", e);
@@ -1264,11 +1319,27 @@ This action CANNOT be undone.`,
                     </View>
                   </View>
 
+                  {/* Room Rate Input */}
+                  <View style={styles.billSection}>
+                    <Text style={styles.billSectionTitle}>Room Rate (per night)</Text>
+                    <View style={styles.billRateInputContainer}>
+                      <Text style={styles.billRateCurrency}>₹</Text>
+                      <TextInput
+                        style={styles.billRateInput}
+                        value={billRoomRate}
+                        onChangeText={updateBillWithRate}
+                        keyboardType="numeric"
+                        placeholder="Enter rate"
+                        placeholderTextColor="#9CA3AF"
+                      />
+                    </View>
+                  </View>
+
                   {/* Room Charges */}
                   <View style={styles.billSection}>
                     <Text style={styles.billSectionTitle}>Room Charges</Text>
                     <View style={styles.billItemRow}>
-                      <Text style={styles.billItemName}>Room {billData.roomNumber} ({billData.nights} night{billData.nights > 1 ? 's' : ''})</Text>
+                      <Text style={styles.billItemName}>Room {billData.roomNumber} ({billData.nights} night{billData.nights > 1 ? 's' : ''}) @ ₹{billData.roomRate}/night</Text>
                       <Text style={styles.billItemAmount}>{formatINR(billData.roomTotal)}</Text>
                     </View>
                   </View>
@@ -1313,6 +1384,18 @@ This action CANNOT be undone.`,
 
                   {/* Bill Summary */}
                   <View style={styles.billSummary}>
+                    <View style={styles.billSummaryRow}>
+                      <Text style={styles.billSummaryLabel}>Room Charges:</Text>
+                      <Text style={styles.billSummaryAmount}>{formatINR(billData.roomTotal)}</Text>
+                    </View>
+                    <View style={styles.billSummaryRow}>
+                      <Text style={styles.billSummaryLabel}>Food Total:</Text>
+                      <Text style={styles.billSummaryAmount}>{formatINR(billData.foodTotal)}</Text>
+                    </View>
+                    <View style={styles.billSummaryRow}>
+                      <Text style={styles.billSummaryLabel}>Service Total:</Text>
+                      <Text style={styles.billSummaryAmount}>{formatINR(billData.serviceTotal)}</Text>
+                    </View>
                     <View style={styles.billSummaryRow}>
                       <Text style={styles.billSummaryLabel}>Subtotal:</Text>
                       <Text style={styles.billSummaryAmount}>{formatINR(billData.subtotal)}</Text>
@@ -1780,6 +1863,23 @@ This action CANNOT be undone.`,
                   />
                 </View>
               </View>
+
+              {/* Room Rate Input */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Room Rate (per night)</Text>
+                <View style={styles.inputWrapper}>
+                  <Text style={[styles.currencySymbol, { marginLeft: 12 }]}>₹</Text>
+                  <TextInput
+                    placeholder="1500"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="numeric"
+                    style={styles.input}
+                    value={roomRate}
+                    onChangeText={setRoomRate}
+                  />
+                </View>
+              </View>
+
               {/* Check-in Date & Time */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Check-in Date & Time</Text>
@@ -2117,11 +2217,19 @@ This action CANNOT be undone.`,
                           );
                           const roomServiceCount = serviceCountForRoom(room.roomNumber, room.assignedAt);
                           const roomServiceTotal = serviceChargesForRoom(room.roomNumber, room.assignedAt);
-                          const roomTotalCharges = totalChargesForRoom(
-                            room.roomNumber,
-                            room.guestId,
-                            room.assignedAt
-                          );
+
+                          // Calculate room total
+                          let roomTotal = 0;
+                          if (room.assignedAt && room.checkoutAt) {
+                            const checkIn = room.assignedAt.toDate();
+                            const checkOut = room.checkoutAt.toDate();
+                            const diffMs = checkOut.getTime() - checkIn.getTime();
+                            const nights = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+                            roomTotal = (room.roomRate || 1500) * nights;
+                          }
+
+                          const roomTotalCharges = roomFoodTotal + roomServiceTotal + roomTotal;
+
                           return (
                             <View key={room.id} style={styles.occupiedCard}>
                               <View style={styles.cardHeader}>
@@ -2187,6 +2295,12 @@ This action CANNOT be undone.`,
                                 <View style={styles.infoRow}>
                                   <Ionicons name="cash-outline" size={14} color="#6B7280" />
                                   <Text style={styles.infoText}>
+                                    Room Charges: ₹{roomTotal.toFixed(2)} ({room.roomRate || 1500}/night)
+                                  </Text>
+                                </View>
+                                <View style={styles.infoRow}>
+                                  <Ionicons name="restaurant-outline" size={14} color="#6B7280" />
+                                  <Text style={styles.infoText}>
                                     Food Orders: {roomFoodCount} (₹{roomFoodTotal.toFixed(2)})
                                   </Text>
                                 </View>
@@ -2238,7 +2352,7 @@ This action CANNOT be undone.`,
                                 ]}
                                 onPress={() => checkoutRoom(room.id, room.roomNumber)}
                               >
-                                <Ionicons name="log-out" size={16} color="#fff" />
+                                <Ionicons name="receipt-outline" size={16} color="#fff" />
                                 <Text style={styles.checkoutText}>
                                   View Bill & Checkout (₹{roomTotalCharges.toFixed(2)})
                                 </Text>
@@ -2574,14 +2688,14 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   checkoutBtn: {
-    backgroundColor: "#DC2626",
+    backgroundColor: "#2563EB",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 12,
     borderRadius: 12,
     gap: 8,
-    shadowColor: "#DC2626",
+    shadowColor: "#2563EB",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -2926,6 +3040,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: "100%",
   },
+  currencySymbol: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+    marginRight: 4,
+  },
   dateValueText: {
     flex: 1,
     fontSize: 15,
@@ -3112,6 +3232,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#111827",
     fontWeight: "700",
+  },
+  billRateInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 12,
+    height: 48,
+  },
+  billRateCurrency: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+    marginRight: 8,
+  },
+  billRateInput: {
+    flex: 1,
+    fontSize: 15,
+    color: "#111827",
+    fontWeight: "600",
+    padding: 0,
   },
   billItemRow: {
     flexDirection: "row",
