@@ -27,8 +27,9 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 import logoImage from "../assets/images/logo.png";
+import { ThemeProvider, useTheme } from "../context/ThemeContext";
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5;
 
 type PropertyType = "Hotel";
 
@@ -48,6 +49,7 @@ export default function Onboarding() {
 
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
+    const { mode, setMode } = useTheme();
 
     // Step 1
     const [propertyType, setPropertyType] = useState<PropertyType>("Hotel");
@@ -177,8 +179,8 @@ export default function Onboarding() {
     };
 
     const nextStep = () => {
-        if (step === 2 && !validateStep2()) return;
-        if (step === 3 && !validateStep3()) return;
+        if (step === 3 && !validateStep2()) return;
+        if (step === 4 && !validateStep3()) return;
 
         if (step < TOTAL_STEPS) setStep((s) => s + 1);
         else finishOnboarding();
@@ -325,6 +327,105 @@ export default function Onboarding() {
             case 1:
                 return (
                     <View style={styles.content}>
+                        <Text style={styles.stepTitle}>Choose your look</Text>
+                        <Text style={styles.stepDesc}>
+                            Welcome to Rooomio. How would you like the app to look?
+                        </Text>
+
+                        <View style={styles.typeGrid}>
+                            <Pressable
+                                style={[
+                                    styles.typeCard,
+                                    mode === "light" && styles.typeCardSelected,
+                                ]}
+                                onPress={() => setMode("light")}
+                            >
+                                <View
+                                    style={[
+                                        styles.typeIcon,
+                                        { backgroundColor: "rgba(245, 158, 11, 0.1)" },
+                                    ]}
+                                >
+                                    <Ionicons name="sunny" size={32} color="#F59E0B" />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.typeLabel}>Light Mode</Text>
+                                    <Text style={styles.typeHint}>Clean and bright experience</Text>
+                                </View>
+                                {mode === "light" && (
+                                    <Ionicons
+                                        name="checkmark-circle"
+                                        size={24}
+                                        color="#2563EB"
+                                        style={styles.checkIcon}
+                                    />
+                                )}
+                            </Pressable>
+
+                            <Pressable
+                                style={[
+                                    styles.typeCard,
+                                    mode === "dark" && styles.typeCardSelected,
+                                ]}
+                                onPress={() => setMode("dark")}
+                            >
+                                <View
+                                    style={[
+                                        styles.typeIcon,
+                                        { backgroundColor: "rgba(79, 70, 229, 0.1)" },
+                                    ]}
+                                >
+                                    <Ionicons name="moon" size={32} color="#4F46E5" />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.typeLabel}>Dark Mode</Text>
+                                    <Text style={styles.typeHint}>Easy on the eyes, modern look</Text>
+                                </View>
+                                {mode === "dark" && (
+                                    <Ionicons
+                                        name="checkmark-circle"
+                                        size={24}
+                                        color="#2563EB"
+                                        style={styles.checkIcon}
+                                    />
+                                )}
+                            </Pressable>
+
+                            <Pressable
+                                style={[
+                                    styles.typeCard,
+                                    mode === "system" && styles.typeCardSelected,
+                                ]}
+                                onPress={() => setMode("system")}
+                            >
+                                <View
+                                    style={[
+                                        styles.typeIcon,
+                                        { backgroundColor: "rgba(107, 114, 128, 0.1)" },
+                                    ]}
+                                >
+                                    <Ionicons name="settings-outline" size={32} color="#6B7280" />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.typeLabel}>System Default</Text>
+                                    <Text style={styles.typeHint}>Match your device settings</Text>
+                                </View>
+                                {mode === "system" && (
+                                    <Ionicons
+                                        name="checkmark-circle"
+                                        size={24}
+                                        color="#2563EB"
+                                        style={styles.checkIcon}
+                                    />
+                                )}
+                            </Pressable>
+                        </View>
+                    </View>
+                );
+
+            case 2:
+                return (
+                    <View style={styles.content}>
                         <Text style={styles.stepTitle}>What do you own?</Text>
                         <Text style={styles.stepDesc}>
                             Select your property type to customize your room setup.
@@ -388,7 +489,7 @@ export default function Onboarding() {
                     </View>
                 );
 
-            case 2:
+            case 3:
                 return (
                     <View style={styles.content}>
                         <Text style={styles.stepTitle}>Hotel structure</Text>
@@ -479,7 +580,7 @@ export default function Onboarding() {
                     </View>
                 );
 
-            case 3:
+            case 4:
                 return (
                     <View style={styles.content}>
                         <Text style={styles.stepTitle}>Room numbering</Text>
@@ -565,7 +666,7 @@ export default function Onboarding() {
                     </View>
                 );
 
-            case 4:
+            case 5:
                 return (
                     <View style={styles.content}>
                         <Text style={styles.stepTitle}>Your Guest QR Code</Text>
@@ -755,6 +856,7 @@ const styles = StyleSheet.create({
     typeCardDisabled: { opacity: 0.55, backgroundColor: "#F3F4F6" },
     typeIcon: { width: 56, height: 56, borderRadius: 16, justifyContent: "center", alignItems: "center", marginRight: 16 },
     typeLabel: { fontSize: 18, fontWeight: "800", color: "#111827", flex: 1 },
+    typeHint: { fontSize: 14, color: "#6B7280", fontWeight: "600", marginTop: 2 },
     checkIcon: { marginLeft: 8 },
 
     infoCard: {

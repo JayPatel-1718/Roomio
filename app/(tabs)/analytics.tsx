@@ -16,6 +16,8 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from "react-native";
+import { ThemeSwitcher } from "../../components/theme-switcher";
+import { useTheme } from "../../context/ThemeContext";
 import { Ionicons } from "@expo/vector-icons";
 import {
   collection,
@@ -30,6 +32,7 @@ import { useRouter } from "expo-router";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
 
 interface TimeRange {
   label: string;
@@ -120,15 +123,14 @@ export default function AnalyticsDashboard() {
   const user = auth.currentUser;
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const systemColorScheme = useColorScheme();
+  // ✅ Theme from global context
+  const { theme: activeTheme, mode, setMode } = useTheme();
+  const isDark = activeTheme === "dark";
 
   const isSmall = width < 380;
   const isMedium = width >= 380 && width < 600;
   const isLarge = width >= 600;
   const isWide = width >= 900;
-
-  // ✅ Theme state (dark/light)
-  const [isDark, setIsDark] = useState(systemColorScheme === "dark");
 
   const [selectedRange, setSelectedRange] = useState<"week" | "month" | "year">("week");
   const [loading, setLoading] = useState(true);
@@ -172,18 +174,17 @@ export default function AnalyticsDashboard() {
 
   // ✅ CSV Export State
   const [exportModalOpen, setExportModalOpen] = useState(false);
-  const [exportStartDate, setExportStartDate] = useState<Date | null>(() => {
+  const [exportStartDate, setExportStartDate] = useState<Date>(() => {
     const date = new Date();
     date.setDate(date.getDate() - 30); // Default to last 30 days
     return date;
   });
-  const [exportEndDate, setExportEndDate] = useState<Date | null>(new Date());
+  const [exportEndDate, setExportEndDate] = useState<Date>(new Date());
   const [exporting, setExporting] = useState(false);
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [iosTempStart, setIosTempStart] = useState<Date>(new Date());
   const [iosTempEnd, setIosTempEnd] = useState<Date>(new Date());
-  const [exportData, setExportData] = useState<RoomExportData[]>([]);
 
   // ✅ Dynamic theme object
   const theme = isDark
@@ -252,24 +253,8 @@ export default function AnalyticsDashboard() {
 
   // Date helpers
   const pad2 = (n: number) => String(n).padStart(2, "0");
-  const formatDateTimeLocal = (d: Date) => {
-    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(
-      d.getHours()
-    )}:${pad2(d.getMinutes())}`;
-  };
-  const parseDateTimeLocal = (val: string) => {
-    try {
-      const [datePart, timePart] = val.split("T");
-      if (!datePart || !timePart) return null;
-      const [y, m, day] = datePart.split("-").map(Number);
-      const [hh, mm] = timePart.split(":").map(Number);
-      if (!y || !m || !day || Number.isNaN(hh) || Number.isNaN(mm)) return null;
-      return new Date(y, m - 1, day, hh, mm, 0, 0);
-    } catch {
-      return null;
-    }
-  };
-  const formatDateDisplay = (date: Date | null) => {
+
+  const formatDateForDisplay = (date: Date | null) => {
     if (!date) return "Select date";
     return date.toLocaleDateString();
   };
@@ -297,21 +282,6 @@ export default function AnalyticsDashboard() {
         }
       },
     });
-  };
-
-  // Web input style
-  const webNativeDateInputStyle: any = {
-    flex: 1,
-    minWidth: 0,
-    height: 48,
-    border: "none",
-    outline: "none",
-    background: "transparent",
-    padding: "12px 12px",
-    fontSize: 15,
-    color: theme.textMain,
-    fontWeight: 600,
-    cursor: "pointer",
   };
 
   // Format INR
@@ -684,13 +654,18 @@ export default function AnalyticsDashboard() {
     }
   };
 
-  // ✅ EXPORT ROOMS DATA TO CSV
+  // ✅ FIXED: EXPORT ROOMS DATA TO CSV
   const exportRoomsToCSV = async () => {
-    if (!user) return;
+    if (!user) {
+      Alert.alert("Error", "You must be logged in to export data");
+      return;
+    }
+
     if (!exportStartDate || !exportEndDate) {
       Alert.alert("Error", "Please select both start and end dates");
       return;
     }
+
     if (exportEndDate < exportStartDate) {
       Alert.alert("Error", "End date must be after start date");
       return;
@@ -699,8 +674,18 @@ export default function AnalyticsDashboard() {
     setExporting(true);
     try {
       const uid = user.uid;
-      const startTimestamp = Timestamp.fromDate(exportStartDate);
-      const endTimestamp = Timestamp.fromDate(exportEndDate);
+
+      // Set time to start and end of day
+      const startOfDay = new Date(exportStartDate);
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const endOfDay = new Date(exportEndDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const startTimestamp = Timestamp.fromDate(startOfDay);
+      const endTimestamp = Timestamp.fromDate(endOfDay);
+
+      console.log("Exporting from:", startOfDay.toLocaleString(), "to:", endOfDay.toLocaleString());
 
       // 1️⃣ Load all rooms
       const roomsRef = collection(db, "users", uid, "rooms");
@@ -729,6 +714,8 @@ export default function AnalyticsDashboard() {
       const serviceRequestsSnap = await getDocs(serviceRequestsQuery);
       const serviceRequests = serviceRequestsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
+      console.log(`Found ${allRooms.length} rooms, ${foodOrders.length} food orders, ${serviceRequests.length} service requests`);
+
       // 4️⃣ Prepare export data for each room
       const exportData: RoomExportData[] = [];
 
@@ -747,15 +734,19 @@ export default function AnalyticsDashboard() {
         let nights = 0;
         let roomCharges = 0;
         if (room.assignedAt && room.checkoutAt) {
-          const checkIn = room.assignedAt.toDate();
-          const checkOut = room.checkoutAt.toDate();
-          const diffMs = checkOut.getTime() - checkIn.getTime();
-          nights = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-          roomCharges = (room.roomRate || 1500) * nights;
+          try {
+            const checkIn = room.assignedAt.toDate();
+            const checkOut = room.checkoutAt.toDate();
+            const diffMs = checkOut.getTime() - checkIn.getTime();
+            nights = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+            roomCharges = (room.roomRate || 1500) * nights;
+          } catch (e) {
+            console.log("Error calculating nights for room", room.roomNumber);
+          }
         }
 
         exportData.push({
-          roomNumber: room.roomNumber,
+          roomNumber: room.roomNumber || 0,
           guestName: room.guestName || "-",
           guestMobile: room.guestMobile || "-",
           checkInDate: room.assignedAt ? room.assignedAt.toDate().toLocaleDateString() : "-",
@@ -772,35 +763,47 @@ export default function AnalyticsDashboard() {
         });
       }
 
-      setExportData(exportData);
-
       // Generate CSV content
       const csvContent = generateCSV(exportData, exportStartDate, exportEndDate);
 
       // Save CSV file
       const fileName = `room_export_${exportStartDate.toISOString().split('T')[0]}_to_${exportEndDate.toISOString().split('T')[0]}.csv`;
-      const fileUri = FileSystem.documentDirectory + fileName;
 
-      await FileSystem.writeAsStringAsync(fileUri, csvContent, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
-
-      // Share the file
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, {
-          mimeType: 'text/csv',
-          dialogTitle: `Export Rooms ${exportStartDate.toLocaleDateString()} - ${exportEndDate.toLocaleDateString()}`,
-          UTI: 'public.comma-separated-values-text'
-        });
+      if (Platform.OS === 'web') {
+        // Web download
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        Alert.alert("Success", `CSV file downloaded as ${fileName}`);
       } else {
-        Alert.alert(
-          "File Saved",
-          `CSV file saved to:\n${fileUri}`,
-          [{ text: "OK" }]
-        );
+        // Mobile save
+        const fileUri = FileSystem.documentDirectory + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+
+        // Share the file
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: 'text/csv',
+            dialogTitle: `Export Rooms ${exportStartDate.toLocaleDateString()} - ${exportEndDate.toLocaleDateString()}`,
+            UTI: 'public.comma-separated-values-text'
+          });
+        } else {
+          Alert.alert(
+            "File Saved",
+            `CSV file saved to:\n${fileUri}`,
+            [{ text: "OK" }]
+          );
+        }
       }
 
       setExportModalOpen(false);
+      Alert.alert("✅ Success", `Exported ${exportData.length} rooms successfully`);
 
     } catch (error) {
       console.error("Export error:", error);
@@ -855,16 +858,16 @@ export default function AnalyticsDashboard() {
 
     const summaryRows = [
       [],
-      ['SUMMARY'],
-      ['Date Range:', `${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`],
-      ['Total Rooms:', totalRooms],
-      ['Total Room Charges (₹):', totalRoomCharges.toFixed(2)],
-      ['Total Food Charges (₹):', totalFoodCharges.toFixed(2)],
-      ['Total Service Charges (₹):', totalServiceCharges.toFixed(2)],
-      ['GRAND TOTAL (₹):', grandTotal.toFixed(2)],
+      ['========== SUMMARY =========='],
+      [`Date Range:, ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`],
+      [`Total Rooms:, ${totalRooms}`],
+      [`Total Room Charges (₹):, ${totalRoomCharges.toFixed(2)}`],
+      [`Total Food Charges (₹):, ${totalFoodCharges.toFixed(2)}`],
+      [`Total Service Charges (₹):, ${totalServiceCharges.toFixed(2)}`],
+      [`GRAND TOTAL (₹):, ${grandTotal.toFixed(2)}`],
       [],
-      ['Generated on:', new Date().toLocaleString()],
-      ['Generated by: Roomio Hotel Management System']
+      [`Generated on:, ${new Date().toLocaleString()}`],
+      [`Generated by:, Roomio Hotel Management System`]
     ];
 
     const csvContent = [
@@ -909,12 +912,6 @@ export default function AnalyticsDashboard() {
   const maxOrders = Math.max(...analytics.dailyOrders.map((d) => d.count), 1);
   const maxPeak = Math.max(...analytics.peakHours.map((h) => h.orders), 1);
 
-  // Web values for export modal
-  const webMinNow = formatDateTimeLocal(new Date(2000, 0, 1));
-  const webMaxNow = formatDateTimeLocal(new Date());
-  const webStartValue = exportStartDate ? formatDateTimeLocal(exportStartDate) : "";
-  const webEndValue = exportEndDate ? formatDateTimeLocal(exportEndDate) : "";
-
   if (loading) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.bgMain }]}>
@@ -947,8 +944,13 @@ export default function AnalyticsDashboard() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bgMain }]}>
-      {/* ✅ EXPORT MODAL */}
-      <Modal visible={exportModalOpen} animationType="slide" transparent onRequestClose={() => setExportModalOpen(false)}>
+      {/* ✅ FIXED: EXPORT MODAL */}
+      <Modal
+        visible={exportModalOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setExportModalOpen(false)}
+      >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
           style={styles.modalOverlay}
@@ -983,20 +985,27 @@ export default function AnalyticsDashboard() {
                 {Platform.OS === "web" ? (
                   <View style={[styles.inputWrapper, { backgroundColor: theme.glass, borderColor: theme.glassBorder }]}>
                     <Ionicons name="calendar-outline" size={18} color={theme.textMuted} style={{ marginLeft: 12 }} />
-                    {/* @ts-ignore */}
                     <input
                       type="date"
-                      value={webStartValue.split('T')[0]}
-                      min="2000-01-01"
-                      max={webEndValue.split('T')[0] || undefined}
-                      onChange={(e: any) => {
+                      value={exportStartDate.toISOString().split('T')[0]}
+                      max={exportEndDate.toISOString().split('T')[0]}
+                      onChange={(e) => {
                         if (e.target.value) {
                           setExportStartDate(new Date(e.target.value));
                         }
                       }}
                       style={{
-                        ...webNativeDateInputStyle,
+                        flex: 1,
+                        minWidth: 0,
+                        height: 48,
+                        border: "none",
+                        outline: "none",
+                        background: "transparent",
+                        padding: "12px",
+                        fontSize: 15,
                         color: theme.textMain,
+                        fontWeight: "600",
+                        cursor: "pointer",
                       }}
                     />
                   </View>
@@ -1006,19 +1015,20 @@ export default function AnalyticsDashboard() {
                     onPress={() => {
                       if (Platform.OS === "android") {
                         openAndroidDatePicker({
-                          initial: exportStartDate || new Date(),
-                          maximumDate: exportEndDate || undefined,
+                          initial: exportStartDate,
+                          maximumDate: exportEndDate,
                           onPicked: (d) => setExportStartDate(d),
                         });
                         return;
                       }
-                      setIosTempStart(exportStartDate || new Date());
+                      // iOS
+                      setIosTempStart(exportStartDate);
                       setShowStartPicker(true);
                     }}
                   >
                     <Ionicons name="calendar-outline" size={18} color={theme.textMuted} style={{ marginLeft: 12 }} />
                     <Text style={[styles.dateValueText, { color: theme.textMain }]} numberOfLines={1}>
-                      {formatDateDisplay(exportStartDate)}
+                      {formatDateForDisplay(exportStartDate)}
                     </Text>
                   </Pressable>
                 )}
@@ -1030,20 +1040,27 @@ export default function AnalyticsDashboard() {
                 {Platform.OS === "web" ? (
                   <View style={[styles.inputWrapper, { backgroundColor: theme.glass, borderColor: theme.glassBorder }]}>
                     <Ionicons name="calendar-outline" size={18} color={theme.textMuted} style={{ marginLeft: 12 }} />
-                    {/* @ts-ignore */}
                     <input
                       type="date"
-                      value={webEndValue.split('T')[0]}
-                      min={webStartValue.split('T')[0] || "2000-01-01"}
-                      max={webMaxNow.split('T')[0]}
-                      onChange={(e: any) => {
+                      value={exportEndDate.toISOString().split('T')[0]}
+                      min={exportStartDate.toISOString().split('T')[0]}
+                      onChange={(e) => {
                         if (e.target.value) {
                           setExportEndDate(new Date(e.target.value));
                         }
                       }}
                       style={{
-                        ...webNativeDateInputStyle,
+                        flex: 1,
+                        minWidth: 0,
+                        height: 48,
+                        border: "none",
+                        outline: "none",
+                        background: "transparent",
+                        padding: "12px",
+                        fontSize: 15,
                         color: theme.textMain,
+                        fontWeight: "600",
+                        cursor: "pointer",
                       }}
                     />
                   </View>
@@ -1053,47 +1070,38 @@ export default function AnalyticsDashboard() {
                     onPress={() => {
                       if (Platform.OS === "android") {
                         openAndroidDatePicker({
-                          initial: exportEndDate || new Date(),
-                          minimumDate: exportStartDate || undefined,
+                          initial: exportEndDate,
+                          minimumDate: exportStartDate,
                           onPicked: (d) => setExportEndDate(d),
                         });
                         return;
                       }
-                      setIosTempEnd(exportEndDate || new Date());
+                      // iOS
+                      setIosTempEnd(exportEndDate);
                       setShowEndPicker(true);
                     }}
                   >
                     <Ionicons name="calendar-outline" size={18} color={theme.textMuted} style={{ marginLeft: 12 }} />
                     <Text style={[styles.dateValueText, { color: theme.textMain }]} numberOfLines={1}>
-                      {formatDateDisplay(exportEndDate)}
+                      {formatDateForDisplay(exportEndDate)}
                     </Text>
                   </Pressable>
                 )}
               </View>
 
-              {/* Export Stats Preview */}
-              {exportData.length > 0 && (
-                <View style={[styles.exportPreview, { backgroundColor: theme.glass, borderColor: theme.glassBorder }]}>
-                  <Text style={[styles.exportPreviewTitle, { color: theme.primary }]}>Export Preview</Text>
-                  <View style={styles.exportPreviewRow}>
-                    <Text style={[styles.exportPreviewLabel, { color: theme.textMuted }]}>Rooms:</Text>
-                    <Text style={[styles.exportPreviewValue, { color: theme.textMain }]}>{exportData.length}</Text>
-                  </View>
-                  <View style={styles.exportPreviewRow}>
-                    <Text style={[styles.exportPreviewLabel, { color: theme.textMuted }]}>Total Charges:</Text>
-                    <Text style={[styles.exportPreviewValue, { color: theme.success }]}>
-                      {formatINR(exportData.reduce((sum, item) => sum + item.totalCharges, 0))}
-                    </Text>
-                  </View>
-                </View>
-              )}
+              <View style={styles.infoBox}>
+                <Ionicons name="information-circle-outline" size={20} color={theme.primary} />
+                <Text style={[styles.infoText, { color: theme.textMuted }]}>
+                  Export includes all rooms with their orders and charges within the selected date range.
+                </Text>
+              </View>
 
               <Pressable
                 onPress={exportRoomsToCSV}
                 disabled={exporting}
                 style={({ pressed }) => [
                   styles.exportBtn,
-                  { backgroundColor: theme.primary },
+                  { backgroundColor: theme.success },
                   pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
                   exporting && { opacity: 0.7 },
                 ]}
@@ -1110,7 +1118,7 @@ export default function AnalyticsDashboard() {
             </ScrollView>
 
             {/* iOS pickers */}
-            {Platform.OS === "ios" && (
+            {Platform.OS === "ios" && showStartPicker && (
               <Modal visible={showStartPicker} transparent animationType="slide">
                 <View style={styles.pickerOverlay}>
                   <Pressable style={styles.pickerBackdrop} onPress={() => setShowStartPicker(false)} />
@@ -1133,7 +1141,7 @@ export default function AnalyticsDashboard() {
                       value={iosTempStart}
                       mode="date"
                       display="spinner"
-                      maximumDate={exportEndDate || undefined}
+                      maximumDate={exportEndDate}
                       onChange={(_, d) => d && setIosTempStart(d)}
                     />
                   </View>
@@ -1141,7 +1149,7 @@ export default function AnalyticsDashboard() {
               </Modal>
             )}
 
-            {Platform.OS === "ios" && (
+            {Platform.OS === "ios" && showEndPicker && (
               <Modal visible={showEndPicker} transparent animationType="slide">
                 <View style={styles.pickerOverlay}>
                   <Pressable style={styles.pickerBackdrop} onPress={() => setShowEndPicker(false)} />
@@ -1164,7 +1172,7 @@ export default function AnalyticsDashboard() {
                       value={iosTempEnd}
                       mode="date"
                       display="spinner"
-                      minimumDate={exportStartDate || undefined}
+                      minimumDate={exportStartDate}
                       onChange={(_, d) => d && setIosTempEnd(d)}
                     />
                   </View>
@@ -1212,20 +1220,7 @@ export default function AnalyticsDashboard() {
             </Pressable>
 
             {/* Theme Toggle */}
-            <Pressable
-              onPress={() => setIsDark(!isDark)}
-              style={({ pressed }) => [
-                styles.themeToggle,
-                { backgroundColor: theme.glass, borderColor: theme.glassBorder },
-                pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-              ]}
-            >
-              <Ionicons
-                name={isDark ? "sunny-outline" : "moon-outline"}
-                size={20}
-                color={theme.primary}
-              />
-            </Pressable>
+            <ThemeSwitcher />
 
             <View style={[styles.badge, { backgroundColor: `${theme.primary}18` }]}>
               <Ionicons name="trending-up" size={isSmall ? 12 : 14} color={theme.primary} />
@@ -2145,31 +2140,20 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     paddingHorizontal: 12,
   },
-  exportPreview: {
-    marginTop: 16,
-    marginBottom: 16,
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  exportPreviewTitle: {
-    fontSize: 14,
-    fontWeight: "900",
-    marginBottom: 10,
-  },
-  exportPreviewRow: {
+  infoBox: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    backgroundColor: "rgba(37, 99, 235, 0.08)",
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 16,
+    gap: 10,
     alignItems: "center",
-    paddingVertical: 4,
   },
-  exportPreviewLabel: {
+  infoText: {
+    flex: 1,
     fontSize: 13,
     fontWeight: "600",
-  },
-  exportPreviewValue: {
-    fontSize: 13,
-    fontWeight: "800",
+    lineHeight: 18,
   },
   exportBtn: {
     flexDirection: "row",
@@ -2179,7 +2163,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     gap: 8,
     marginTop: 8,
-    shadowColor: "#2563EB",
+    shadowColor: "#16A34A",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,

@@ -163,145 +163,222 @@ export default function MenuScreen() {
         setConfirm({ open: true, ...cfg });
     };
 
-    // ─── CAMERA ───────────────────────────────────────────────────────────────
+    // ─── FIXED: CAMERA HANDLER ────────────────────────────────────────────────
     const handleCamera = async () => {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('Permission Denied', 'Camera access is required to scan menus.'); return;
-        }
-        const r = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.9 });
-        if (!r.canceled && r.assets[0]) {
-            const b64 = r.assets[0].base64 || await readBase64(r.assets[0].uri);
-            runImport(b64, 'image');
+        try {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert(
+                    'Permission Required',
+                    'Camera access is needed to scan menus. Please enable it in settings.',
+                    [{ text: 'OK' }]
+                );
+                return;
+            }
+
+            const result = await ImagePicker.launchCameraAsync({
+                base64: true,
+                quality: 0.9,
+                allowsEditing: false,
+            });
+
+            if (!result.canceled && result.assets[0]?.base64) {
+                await runImport(result.assets[0].base64, 'image');
+            } else {
+                Alert.alert('Cancelled', 'Camera scan was cancelled.');
+            }
+        } catch (error) {
+            console.error('Camera error:', error);
+            Alert.alert('Error', 'Failed to access camera. Please try again.');
         }
     };
 
-    // ─── GALLERY ──────────────────────────────────────────────────────────────
+    // ─── FIXED: GALLERY HANDLER ───────────────────────────────────────────────
     const handleGallery = async () => {
-        const r = await ImagePicker.launchImageLibraryAsync({
-            base64: true, quality: 0.9, mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        });
-        if (!r.canceled && r.assets[0]) {
-            const b64 = r.assets[0].base64 || await readBase64(r.assets[0].uri);
-            runImport(b64, 'image');
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert(
+                    'Permission Required',
+                    'Gallery access is needed to upload menus. Please enable it in settings.',
+                    [{ text: 'OK' }]
+                );
+                return;
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                base64: true,
+                quality: 0.9,
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: false,
+            });
+
+            if (!result.canceled && result.assets[0]?.base64) {
+                await runImport(result.assets[0].base64, 'image');
+            } else {
+                Alert.alert('Cancelled', 'Image selection was cancelled.');
+            }
+        } catch (error) {
+            console.error('Gallery error:', error);
+            Alert.alert('Error', 'Failed to access gallery. Please try again.');
         }
     };
 
-    // ─── PDF / FILE ───────────────────────────────────────────────────────────
+    // ─── FIXED: FILE/PDF HANDLER ──────────────────────────────────────────────
     const handleFile = async () => {
         try {
-            const r = await DocumentPicker.getDocumentAsync({
-                type: ['application/pdf', 'text/plain', 'image/*'],
+            const result = await DocumentPicker.getDocumentAsync({
+                type: ['application/pdf', 'image/*', 'text/plain'],
                 copyToCacheDirectory: true,
             });
-            if (r.canceled || !r.assets?.[0]) return;
-            const asset = r.assets[0];
+
+            if (result.canceled || !result.assets?.[0]) {
+                return;
+            }
+
+            const asset = result.assets[0];
             console.log('📄 File picked:', asset.name, asset.mimeType);
 
-            if (asset.mimeType?.startsWith('image/')) {
-                const b64 = await readBase64(asset.uri);
-                runImport(b64, 'image');
-                return;
-            }
-            if (asset.mimeType === 'text/plain' || asset.name?.endsWith('.txt')) {
-                const text = await FileSystem.readAsStringAsync(asset.uri);
-                runImport(text, 'text');
-                return;
-            }
-            // PDF or unknown — read as base64 and send to OCR
-            setParseStatus('Reading file...');
+            // Show loading immediately
             setImportOpen(true);
             setParsing(true);
+            setParseStatus('📄 Reading file...');
             setParsedItems([]);
             setSelected(new Set());
-            try {
-                const b64 = await readBase64(asset.uri);
-                setParseStatus('OCR extracting text from PDF...');
-                await runImportCore(b64, 'pdf');
-            } catch (e: any) {
-                setParsing(false);
-                setImportOpen(false);
+
+            // Determine file type and read accordingly
+            if (asset.mimeType?.startsWith('image/')) {
+                const base64 = await readBase64(asset.uri);
+                await runImport(base64, 'image');
+            }
+            else if (asset.mimeType === 'text/plain' || asset.name?.endsWith('.txt')) {
+                const text = await FileSystem.readAsStringAsync(asset.uri, {
+                    encoding: FileSystem.EncodingType.UTF8,
+                });
+                await runImport(text, 'text');
+            }
+            else {
+                // PDF or other - read as base64
+                const base64 = await readBase64(asset.uri);
+                setParseStatus('📄 OCR extracting text from PDF...');
+                await runImport(base64, 'pdf');
+            }
+
+        } catch (error) {
+            console.error('File picker error:', error);
+            setImportOpen(false);
+            setParsing(false);
+
+            // Don't show error if user cancelled
+            if (!error.message?.toLowerCase().includes('cancel')) {
                 Alert.alert(
-                    'PDF Tip',
-                    'For PDFs, best results come from:\n\n• Taking a photo of each menu page with your camera\n• Or uploading a screenshot of the PDF\n\nCamera scan works best!',
+                    'Error Reading File',
+                    'Could not read the selected file. Please try a different file or use camera scan.',
                     [{ text: 'OK' }]
                 );
             }
-        } catch (e: any) {
-            if (!e?.message?.toLowerCase().includes('cancel')) {
-                Alert.alert('Error', e.message);
-            }
         }
     };
 
-    // ─── IMPORT FLOW ──────────────────────────────────────────────────────────
-    const runImport = (source: string, type: 'image' | 'text' | 'pdf') => {
+    // ─── FIXED: IMPORT RUNNER ─────────────────────────────────────────────────
+    const runImport = async (source: string, type: 'image' | 'text' | 'pdf') => {
         setImportOpen(true);
         setParsing(true);
         setParsedItems([]);
         setSelected(new Set());
-        setParseStatus(
-            type === 'text' ? 'Reading menu text...' :
-                type === 'pdf' ? 'OCR extracting PDF text...' :
-                    'OCR extracting image text...'
-        );
-        runImportCore(source, type).catch(() => { });
-    };
 
-    const runImportCore = async (source: string, type: 'image' | 'text' | 'pdf') => {
+        const statusText =
+            type === 'text' ? '📝 Reading menu text...' :
+                type === 'pdf' ? '📄 OCR extracting PDF text...' :
+                    '📸 OCR extracting image text...';
+
+        setParseStatus(statusText);
+
         try {
-            setParseStatus('Step 1/2 — Extracting text...');
+            console.log(`🚀 Running import with type: ${type}`);
+
             const data = await parseMenuFromAI(source, type);
+
             setParseStatus('');
 
             if (data && data.length > 0) {
                 setParsedItems(data);
-                setSelected(new Set(data.map((_: any, i: number) => i)));
+                setSelected(new Set(data.map((_, i) => i)));
+
+                Alert.alert(
+                    '✅ Menu Scanned Successfully',
+                    `Found ${data.length} items on your menu. Please review before saving.`,
+                    [{ text: 'Review Items' }]
+                );
             } else {
                 setImportOpen(false);
                 Alert.alert(
                     'No Items Found',
-                    'AI could not find menu items. Tips:\n\n• Use better lighting\n• Hold the camera steady\n• Get closer to the menu text\n• Make sure text is in focus',
+                    'Could not detect any menu items. Tips:\n\n• Use better lighting\n• Hold camera steady\n• Get closer to the text\n• Ensure text is in focus',
                     [{ text: 'OK' }]
                 );
             }
-        } catch (e: any) {
-            console.error('Import error:', e);
+        } catch (error) {
+            console.error('Import error:', error);
             setImportOpen(false);
-            Alert.alert('Import Failed', `${e.message}\n\nTips:\n• Better lighting helps a lot\n• Hold phone steady\n• Text must be clearly visible`, [{ text: 'OK' }]);
+
+            Alert.alert(
+                'Import Failed',
+                `${error.message}\n\nTips:\n• Better lighting helps a lot\n• Hold phone steady\n• Text must be clearly visible`,
+                [{ text: 'OK' }]
+            );
         } finally {
             setParsing(false);
             setParseStatus('');
         }
     };
 
+    // ─── FIXED: SAVE IMPORTED ITEMS ───────────────────────────────────────────
     const saveImported = async () => {
         if (!user || parsedItems.length === 0) return;
-        const toSave = parsedItems.filter((_: any, i: number) => selected.has(i));
-        if (toSave.length === 0) { Alert.alert('Nothing selected'); return; }
+
+        const toSave = parsedItems.filter((_, i) => selected.has(i));
+        if (toSave.length === 0) {
+            Alert.alert('Nothing Selected', 'Please select at least one item to save.');
+            return;
+        }
+
         setSaving(true);
         try {
             const newCats = new Set<string>();
+
             for (const item of toSave) {
+                // Ensure category exists
                 ensureCat(item.category);
-                if (!STANDARD_CATEGORIES.includes(item.category)) newCats.add(item.category);
+                if (!STANDARD_CATEGORIES.includes(item.category)) {
+                    newCats.add(item.category);
+                }
+
+                await addDoc(collection(db, 'users', user.uid, 'menuItems'), {
+                    category: item.category,
+                    name: item.name,
+                    description: item.description || '',
+                    price: item.price ?? null,
+                    isAvailable: true,
+                    isVeg: item.isVeg ?? null,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                });
             }
-            await Promise.all(toSave.map((item: any) =>
-                addDoc(collection(db, 'users', user.uid, 'menuItems'), {
-                    category: item.category, name: item.name,
-                    description: item.description || '', price: item.price ?? null,
-                    isAvailable: true, isVeg: item.isVeg ?? null,
-                    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-                })
-            ));
-            setImportOpen(false); setParsedItems([]); setSelected(new Set());
+
+            setImportOpen(false);
+            setParsedItems([]);
+            setSelected(new Set());
+
             Alert.alert(
                 '✨ Menu Synced!',
-                `${toSave.length} items added.${newCats.size > 0 ? `\n\n🆕 New categories created: ${[...newCats].join(', ')}` : ''}`,
+                `Successfully added ${toSave.length} items to your menu.${newCats.size > 0 ? `\n\n🆕 New categories: ${[...newCats].join(', ')}` : ''
+                }`,
                 [{ text: 'Great!' }]
             );
-        } catch (e: any) {
-            Alert.alert('Error', e.message);
+        } catch (error) {
+            console.error('Save error:', error);
+            Alert.alert('Error', `Failed to save items: ${error.message}`);
         } finally {
             setSaving(false);
         }

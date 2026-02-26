@@ -3,6 +3,7 @@ import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import CustomSplash from "../components/CustomSplash";
+import { ThemeProvider } from "../context/ThemeContext";
 
 export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(true);
@@ -22,5 +23,9 @@ export default function RootLayout() {
     return <CustomSplash onFinish={() => setShowSplash(false)} />;
   }
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <ThemeProvider>
+      <Stack screenOptions={{ headerShown: false }} />
+    </ThemeProvider>
+  );
 }
