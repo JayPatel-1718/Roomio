@@ -11,6 +11,7 @@ import {
   Dimensions,
   Animated,
 } from "react-native";
+import { useTheme } from "../../context/ThemeContext";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -22,6 +23,7 @@ import {
   updateDoc,
   where,
   serverTimestamp,
+  setDoc,
   writeBatch,
   getDocs,
   deleteDoc,
@@ -66,6 +68,8 @@ type Room = {
 export default function Tracking() {
   const router = useRouter();
   const [user, setUser] = useState(auth.currentUser);
+  const { theme: currentTheme, mode, setMode } = useTheme();
+  const isDark = currentTheme === "dark";
   const appState = useRef(AppState.currentState);
   const { width } = Dimensions.get("window");
 
@@ -127,7 +131,7 @@ export default function Tracking() {
     };
   }, [user]);
 
-  const handleAppStateChange = async (nextAppState: string) => {
+  const handleAppStateChange = async (nextAppState: any) => {
     if (nextAppState === "active" && appState.current !== "active") {
       if (user) {
         const now = Date.now();
@@ -142,6 +146,34 @@ export default function Tracking() {
       lastAppForegroundTime.current = Date.now();
     }
   };
+
+  const colors = isDark
+    ? {
+      bgMain: "#010409",
+      bgCard: "rgba(13, 17, 23, 0.6)",
+      textMain: "#f0f6fc",
+      textMuted: "#8b949e",
+      glass: "rgba(255, 255, 255, 0.03)",
+      glassBorder: "rgba(255, 255, 255, 0.1)",
+      shadow: "rgba(0, 0, 0, 0.6)",
+      primary: "#2563eb",
+      success: "#22c55e",
+      warning: "#f59e0b",
+      danger: "#ef4444",
+    }
+    : {
+      bgMain: "#f8fafc",
+      bgCard: "#ffffff",
+      textMain: "#0f172a",
+      textMuted: "#64748b",
+      glass: "rgba(37, 99, 235, 0.04)",
+      glassBorder: "rgba(37, 99, 235, 0.12)",
+      shadow: "rgba(37, 99, 235, 0.15)",
+      primary: "#2563eb",
+      success: "#16a34a",
+      warning: "#f59e0b",
+      danger: "#dc2626",
+    };
 
   const checkForArchivedRequests = async () => {
     if (!user) return;
@@ -187,9 +219,9 @@ export default function Tracking() {
           const rawStatus = String(data.status || "available").toLowerCase();
           const status: Room["status"] =
             rawStatus === "occupied" ||
-            rawStatus === "available" ||
-            rawStatus === "maintenance" ||
-            rawStatus === "dirty"
+              rawStatus === "available" ||
+              rawStatus === "maintenance" ||
+              rawStatus === "dirty"
               ? rawStatus
               : "available";
           return {
@@ -338,93 +370,93 @@ export default function Tracking() {
     return "hourglass-outline";
   };
 
-// ✅ FIXED: Complete without redirecting to Done tab
-const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">) => {
-  try {
-    const updates: any = {
-      status: next,
-      updatedAt: serverTimestamp(),
-    };
+  // ✅ FIXED: Complete without redirecting to Done tab
+  const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">) => {
+    try {
+      const updates: any = {
+        status: next,
+        updatedAt: serverTimestamp(),
+      };
 
-    if (next === "in-progress") {
-      updates.acceptedAt = serverTimestamp();
-      await updateDoc(doc(db, "serviceRequests", id), updates);
-      Alert.alert("✅ Started", "Request is now in progress.", [{ text: "OK" }]);
-    }
-    
-    if (next === "completed") {
-      updates.completedAt = serverTimestamp();
-      
-      // First, get the current request data
-      const requestDoc = await getDocs(query(
-        collection(db, "serviceRequests"),
-        where("__name__", "==", id)
-      ));
-      
-      if (!requestDoc.empty) {
-        const requestData = requestDoc.docs[0].data();
-        
-        // Update service request
+      if (next === "in-progress") {
+        updates.acceptedAt = serverTimestamp();
         await updateDoc(doc(db, "serviceRequests", id), updates);
-        
-        // If it's a Food Order, also update the corresponding order in 'orders' collection
-        if (requestData.type === "Food Order") {
-          try {
-            const orderRef = doc(db, "orders", id);
-            
-            // Try to update existing order
-            await updateDoc(orderRef, {
-              status: "completed",
-              completedAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-              estimatedTime: requestData.estimatedTime || null,
-              readyAt: requestData.readyAt || null,
-            }).catch(async () => {
-              // If order doesn't exist in 'orders' collection, create it
-              // (this handles cases where the order was created before we added the sync)
-              await setDoc(orderRef, {
-                adminId: user?.uid,
-                type: "Food Order",
+        Alert.alert("✅ Started", "Request is now in progress.", [{ text: "OK" }]);
+      }
+
+      if (next === "completed") {
+        updates.completedAt = serverTimestamp();
+
+        // First, get the current request data
+        const requestDoc = await getDocs(query(
+          collection(db, "serviceRequests"),
+          where("__name__", "==", id)
+        ));
+
+        if (!requestDoc.empty) {
+          const requestData = requestDoc.docs[0].data();
+
+          // Update service request
+          await updateDoc(doc(db, "serviceRequests", id), updates);
+
+          // If it's a Food Order, also update the corresponding order in 'orders' collection
+          if (requestData.type === "Food Order") {
+            try {
+              const orderRef = doc(db, "orders", id);
+
+              // Try to update existing order
+              await updateDoc(orderRef, {
                 status: "completed",
-                roomNumber: requestData.roomNumber,
-                guestName: requestData.guestName || "Guest",
-                guestMobile: requestData.guestMobile || "",
-                dishName: requestData.dishName || "Food Order",
-                mealCategory: requestData.mealCategory || "lunch",
-                notes: requestData.notes || "",
-                quantity: requestData.quantity || 1,
-                price: requestData.price || 0,
+                completedAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
                 estimatedTime: requestData.estimatedTime || null,
                 readyAt: requestData.readyAt || null,
-                acceptedAt: requestData.acceptedAt || serverTimestamp(),
-                completedAt: serverTimestamp(),
-                createdAt: requestData.createdAt || serverTimestamp(),
-                updatedAt: serverTimestamp(),
-                source: "admin",
-                serviceRequestId: id,
+              }).catch(async () => {
+                // If order doesn't exist in 'orders' collection, create it
+                // (this handles cases where the order was created before we added the sync)
+                await setDoc(orderRef, {
+                  adminId: user?.uid,
+                  type: "Food Order",
+                  status: "completed",
+                  roomNumber: requestData.roomNumber,
+                  guestName: requestData.guestName || "Guest",
+                  guestMobile: requestData.guestMobile || "",
+                  dishName: requestData.dishName || "Food Order",
+                  mealCategory: requestData.mealCategory || "lunch",
+                  notes: requestData.notes || "",
+                  quantity: requestData.quantity || 1,
+                  price: requestData.price || 0,
+                  estimatedTime: requestData.estimatedTime || null,
+                  readyAt: requestData.readyAt || null,
+                  acceptedAt: requestData.acceptedAt || serverTimestamp(),
+                  completedAt: serverTimestamp(),
+                  createdAt: requestData.createdAt || serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                  source: "admin",
+                  serviceRequestId: id,
+                });
               });
-            });
-          } catch (error) {
-            console.log("Error updating order in 'orders' collection:", error);
-            // Continue even if order update fails
+            } catch (error) {
+              console.log("Error updating order in 'orders' collection:", error);
+              // Continue even if order update fails
+            }
           }
+        } else {
+          // If we can't find the request, just update it directly
+          await updateDoc(doc(db, "serviceRequests", id), updates);
         }
-      } else {
-        // If we can't find the request, just update it directly
-        await updateDoc(doc(db, "serviceRequests", id), updates);
+
+        Alert.alert(
+          "✅ Completed",
+          "Request marked as completed. It will now appear in the Done tab.",
+          [{ text: "OK" }]
+        );
       }
-      
-      Alert.alert(
-        "✅ Completed", 
-        "Request marked as completed. It will now appear in the Done tab.",
-        [{ text: "OK" }]
-      );
+    } catch (e: any) {
+      console.error("Update status failed:", e);
+      Alert.alert("Error", e?.message || "Failed to update status.");
     }
-  } catch (e: any) {
-    console.error("Update status failed:", e);
-    Alert.alert("Error", e?.message || "Failed to update status.");
-  }
-};
+  };
 
   const archiveCompleted = async () => {
     if (completedRequests.length === 0) {
@@ -583,7 +615,7 @@ const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">
   const fontSizeMultiplier = isSmallScreen ? 0.85 : 1;
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bgMain }]}>
       {/* Archive Prompt Modal */}
       <Modal
         visible={showArchivePrompt}
@@ -855,7 +887,7 @@ const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">
                       </View>
 
                       {selected.status !== "completed" &&
-                      selected.status !== "archived" ? (
+                        selected.status !== "archived" ? (
                         <>
                           <View style={styles.detailDivider} />
                           <View style={styles.detailRow}>
@@ -958,7 +990,7 @@ const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">
       </Modal>
 
       <ScrollView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: colors.bgMain }]}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
@@ -975,7 +1007,7 @@ const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">
               <Text
                 style={[
                   styles.greeting,
-                  { fontSize: 11 * fontSizeMultiplier },
+                  { fontSize: 11 * fontSizeMultiplier, color: colors.textMuted },
                 ]}
               >
                 LIVE TRACKING
@@ -984,12 +1016,13 @@ const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">
             <Text
               style={[
                 styles.title,
-                { fontSize: Math.min(24 * fontSizeMultiplier, 26) },
+                { fontSize: Math.min(24 * fontSizeMultiplier, 26), color: colors.textMain },
               ]}
             >
               Service Requests
             </Text>
           </View>
+
 
           <View style={styles.headerRight}>
             <Pressable
@@ -998,8 +1031,7 @@ const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">
               style={({ pressed }) => [
                 styles.headerActionBtn,
                 styles.cleanupBtn,
-                (isDeletingOrders || !roomsLoaded) &&
-                  styles.cleanupBtnDisabled,
+                (isDeletingOrders || !roomsLoaded) && styles.cleanupBtnDisabled,
                 pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
               ]}
             >
@@ -1009,15 +1041,13 @@ const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">
                 color="#DC2626"
               />
             </Pressable>
-
             <Pressable
               onPress={deleteArchived}
               disabled={isDeletingOrders || !roomsLoaded}
               style={({ pressed }) => [
                 styles.headerActionBtn,
                 styles.archiveBtnSmall,
-                (isDeletingOrders || !roomsLoaded) &&
-                  styles.cleanupBtnDisabled,
+                (isDeletingOrders || !roomsLoaded) && styles.cleanupBtnDisabled,
                 pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
               ]}
             >
@@ -1031,7 +1061,16 @@ const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">
         </Animated.View>
 
         {/* Info Strip */}
-        <Animated.View style={[styles.infoStrip, { opacity: fadeAnim }]}>
+        <Animated.View
+          style={[
+            styles.infoStrip,
+            {
+              opacity: fadeAnim,
+              backgroundColor: colors.bgCard,
+              borderColor: colors.glassBorder,
+            },
+          ]}
+        >
           <View style={styles.infoLeft}>
             <View style={styles.infoItem}>
               <View
@@ -1040,7 +1079,7 @@ const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">
               <Text
                 style={[
                   styles.infoText,
-                  { fontSize: 12 * fontSizeMultiplier },
+                  { fontSize: 12 * fontSizeMultiplier, color: colors.textMuted },
                 ]}
               >
                 {occupiedCount} occupied
@@ -1054,23 +1093,23 @@ const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">
               <Text
                 style={[
                   styles.infoText,
-                  { fontSize: 12 * fontSizeMultiplier },
+                  { fontSize: 12 * fontSizeMultiplier, color: colors.textMuted },
                 ]}
               >
                 {availableCount} available
               </Text>
             </View>
           </View>
-          <View style={styles.activeBadge}>
+          <View style={[styles.activeBadge, { backgroundColor: colors.glass }]}>
             <Ionicons
               name="pulse"
               size={12 * fontSizeMultiplier}
-              color="#2563EB"
+              color={colors.primary}
             />
             <Text
               style={[
                 styles.syncText,
-                { fontSize: 11 * fontSizeMultiplier },
+                { fontSize: 11 * fontSizeMultiplier, color: colors.primary },
               ]}
             >
               {requests.length}
@@ -1128,7 +1167,7 @@ const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">
               key: "completed",
               label: "Done",
               count: grouped.completed.length,
-              icon: "checkmark-done-outline",
+              icon: "mail-outline",
             },
           ].map((t) => (
             <Pressable
@@ -1136,22 +1175,29 @@ const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">
               onPress={() => setFilter(t.key as any)}
               style={({ pressed }) => [
                 styles.filterTab,
-                filter === t.key && styles.filterTabActive,
+                { backgroundColor: colors.bgCard, borderColor: colors.glassBorder },
+                filter === t.key && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary },
                 pressed && { opacity: 0.9 },
               ]}
             >
               <Ionicons
                 name={t.icon as any}
-                size={13 * fontSizeMultiplier}
-                color={filter === t.key ? "#fff" : "#9CA3AF"}
+                size={14 * fontSizeMultiplier}
+                color={filter === t.key ? colors.primary : colors.textMuted}
               />
               <Text
                 style={[
                   styles.filterTabText,
-                  filter === t.key && styles.filterTabTextActive,
-                  { fontSize: 11 * fontSizeMultiplier },
+                  { fontSize: 13 * fontSizeMultiplier, color: filter === t.key ? colors.primary : colors.textMuted },
                 ]}
-                numberOfLines={1}
+              >
+                {t.label}
+              </Text>
+              <Text
+                style={[
+                  styles.filterTabCount,
+                  { fontSize: 11 * fontSizeMultiplier, color: filter === t.key ? colors.primary : colors.textMuted },
+                ]}
               >
                 {t.count}
               </Text>
@@ -1160,325 +1206,328 @@ const updateStatus = async (id: string, next: Exclude<RequestStatus, "archived">
         </View>
 
         {/* Content */}
-        {filtered.length === 0 ? (
-          <View style={styles.emptyState}>
-            <View style={styles.emptyIconWrap}>
-              <Ionicons
-                name="inbox-outline"
-                size={40 * fontSizeMultiplier}
-                color="#D1D5DB"
-              />
-            </View>
-            <Text
-              style={[
-                styles.emptyText,
-                { fontSize: 17 * fontSizeMultiplier },
-              ]}
-            >
-              All Clear
-            </Text>
-            <Text
-              style={[
-                styles.emptySub,
-                { fontSize: 13 * fontSizeMultiplier },
-              ]}
-            >
-              No matching requests for this filter.
-            </Text>
-          </View>
-        ) : (
-          filtered.map((r) => {
-            const c = statusColors(r.status);
-            const status = (r.status || "pending").toUpperCase();
-
-            const title =
-              r.type === "Food Order"
-                ? r.dishName || "Food Order"
-                : r.type || "Service Request";
-
-            const progress = getProgress(r);
-            const isCompleted = r.status === "completed";
-            const isPending = (r.status || "pending") === "pending";
-
-            const showProgressBar =
-              r.type === "Food Order" &&
-              !isPending &&
-              !isCompleted &&
-              (r.estimatedTime || 0) > 0;
-
-            const typeIcon: any =
-              r.type === "Food Order"
-                ? "restaurant-outline"
-                : r.type === "Housekeeping"
-                  ? "sparkles-outline"
-                  : r.type === "Maintenance"
-                    ? "construct-outline"
-                    : "ellipsis-horizontal-circle-outline";
-
-            return (
-              <Pressable
-                key={r.id}
-                onPress={() => openDetails(r)}
-                style={({ pressed }) => [
-                  styles.card,
-                  pressed && {
-                    opacity: 0.97,
-                    transform: [{ scale: 0.985 }],
-                  },
-                  isPending && styles.cardPending,
-                  r.status === "in-progress" && styles.cardInProgress,
-                  isCompleted && styles.cardCompleted,
+        {
+          filtered.length === 0 ? (
+            <View style={styles.emptyState}>
+              <View style={styles.emptyIconWrap}>
+                <Ionicons
+                  name="archive-outline"
+                  size={40 * fontSizeMultiplier}
+                  color="#D1D5DB"
+                />
+              </View>
+              <Text
+                style={[
+                  styles.emptyText,
+                  { fontSize: 17 * fontSizeMultiplier },
                 ]}
               >
-                {/* Card Header */}
-                <View style={styles.cardTop}>
-                  <View style={styles.cardTopLeft}>
-                    <View
-                      style={[
-                        styles.typeIconWrap,
-                        { backgroundColor: c.bg },
-                      ]}
-                    >
-                      <Ionicons
-                        name={typeIcon}
-                        size={14 * fontSizeMultiplier}
-                        color={c.text}
-                      />
-                    </View>
-                    <View style={styles.roomPill}>
-                      <Ionicons
-                        name="bed"
-                        size={11 * fontSizeMultiplier}
-                        color="#6B7280"
-                      />
-                      <Text
+                All Clear
+              </Text>
+              <Text
+                style={[
+                  styles.emptySub,
+                  { fontSize: 13 * fontSizeMultiplier },
+                ]}
+              >
+                No matching requests for this filter.
+              </Text>
+            </View>
+          ) : (
+            filtered.map((r) => {
+              const c = statusColors(r.status);
+              const status = (r.status || "pending").toUpperCase();
+
+              const title =
+                r.type === "Food Order"
+                  ? r.dishName || "Food Order"
+                  : r.type || "Service Request";
+
+              const progress = getProgress(r);
+              const isCompleted = r.status === "completed";
+              const isPending = (r.status || "pending") === "pending";
+
+              const showProgressBar =
+                r.type === "Food Order" &&
+                !isPending &&
+                !isCompleted &&
+                (r.estimatedTime || 0) > 0;
+
+              const typeIcon: any =
+                r.type === "Food Order"
+                  ? "restaurant-outline"
+                  : r.type === "Housekeeping"
+                    ? "sparkles-outline"
+                    : r.type === "Maintenance"
+                      ? "construct-outline"
+                      : "ellipsis-horizontal-circle-outline";
+
+              return (
+                <Pressable
+                  key={r.id}
+                  onPress={() => openDetails(r)}
+                  style={({ pressed }) => [
+                    styles.card,
+                    { backgroundColor: colors.bgCard, borderColor: colors.glassBorder },
+                    pressed && {
+                      opacity: 0.97,
+                      transform: [{ scale: 0.985 }],
+                    },
+                    isPending && styles.cardPending,
+                    r.status === "in-progress" && styles.cardInProgress,
+                    isCompleted && styles.cardCompleted,
+                  ]}
+                >
+                  {/* Card Header */}
+                  <View style={styles.cardTop}>
+                    <View style={styles.cardTopLeft}>
+                      <View
                         style={[
-                          styles.roomPillText,
-                          { fontSize: 11 * fontSizeMultiplier },
+                          styles.typeIconWrap,
+                          { backgroundColor: c.bg },
                         ]}
                       >
-                        {r.roomNumber ?? "—"}
-                      </Text>
+                        <Ionicons
+                          name={typeIcon}
+                          size={14 * fontSizeMultiplier}
+                          color={c.text}
+                        />
+                      </View>
+                      <View style={styles.roomPill}>
+                        <Ionicons
+                          name="bed"
+                          size={11 * fontSizeMultiplier}
+                          color="#6B7280"
+                        />
+                        <Text
+                          style={[
+                            styles.roomPillText,
+                            { fontSize: 11 * fontSizeMultiplier },
+                          ]}
+                        >
+                          {r.roomNumber ?? "—"}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.cardTopRight}>
+                      <View
+                        style={[styles.statusPill, { backgroundColor: c.bg }]}
+                      >
+                        <Ionicons
+                          name={getStatusIcon(r.status)}
+                          size={10 * fontSizeMultiplier}
+                          color={c.text}
+                        />
+                        <Text
+                          style={[
+                            styles.statusText,
+                            {
+                              color: c.text,
+                              fontSize: 10 * fontSizeMultiplier,
+                            },
+                          ]}
+                        >
+                          {status}
+                        </Text>
+                      </View>
+                      <Pressable
+                        style={styles.detailsBtn}
+                        onPress={() => openDetails(r)}
+                      >
+                        <Ionicons
+                          name="chevron-forward"
+                          size={14 * fontSizeMultiplier}
+                          color="#9CA3AF"
+                        />
+                      </Pressable>
                     </View>
                   </View>
 
-                  <View style={styles.cardTopRight}>
-                    <View
-                      style={[styles.statusPill, { backgroundColor: c.bg }]}
-                    >
-                      <Ionicons
-                        name={getStatusIcon(r.status)}
-                        size={10 * fontSizeMultiplier}
-                        color={c.text}
-                      />
+                  {/* Card Body */}
+                  <Text
+                    style={[
+                      styles.cardTitle,
+                      { fontSize: 16 * fontSizeMultiplier },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {title}
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.cardSub,
+                      { fontSize: 12 * fontSizeMultiplier },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {r.type === "Food Order"
+                      ? r.mealCategory
+                        ? `${r.mealCategory.charAt(0).toUpperCase() + r.mealCategory.slice(1)}`
+                        : "Meal"
+                      : r.type ?? "Service"}
+                    {r.guestName ? ` · ${r.guestName}` : ""}
+                    {r.quantity ? ` · Qty: ${r.quantity}` : ""}
+                  </Text>
+
+                  {/* Progress */}
+                  {showProgressBar ? (
+                    <View style={styles.progressContainer}>
+                      <View style={styles.progressTrack}>
+                        <Animated.View
+                          style={[
+                            styles.progressFill,
+                            {
+                              width: `${progress}%`,
+                              backgroundColor:
+                                progress >= 80 ? "#16A34A" : "#2563EB",
+                            },
+                          ]}
+                        />
+                      </View>
                       <Text
                         style={[
-                          styles.statusText,
-                          {
-                            color: c.text,
-                            fontSize: 10 * fontSizeMultiplier,
-                          },
+                          styles.progressText,
+                          { fontSize: 11 * fontSizeMultiplier },
                         ]}
                       >
-                        {status}
+                        {progress}%
                       </Text>
                     </View>
-                    <Pressable
-                      style={styles.detailsBtn}
-                      onPress={() => openDetails(r)}
-                    >
+                  ) : null}
+
+                  {/* ETA / Time */}
+                  <View style={styles.cardMeta}>
+                    <View style={styles.cardMetaLeft}>
                       <Ionicons
-                        name="chevron-forward"
-                        size={14 * fontSizeMultiplier}
+                        name="time-outline"
+                        size={13 * fontSizeMultiplier}
                         color="#9CA3AF"
                       />
-                    </Pressable>
-                  </View>
-                </View>
-
-                {/* Card Body */}
-                <Text
-                  style={[
-                    styles.cardTitle,
-                    { fontSize: 16 * fontSizeMultiplier },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {title}
-                </Text>
-
-                <Text
-                  style={[
-                    styles.cardSub,
-                    { fontSize: 12 * fontSizeMultiplier },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {r.type === "Food Order"
-                    ? r.mealCategory
-                      ? `${r.mealCategory.charAt(0).toUpperCase() + r.mealCategory.slice(1)}`
-                      : "Meal"
-                    : r.type ?? "Service"}
-                  {r.guestName ? ` · ${r.guestName}` : ""}
-                  {r.quantity ? ` · Qty: ${r.quantity}` : ""}
-                </Text>
-
-                {/* Progress */}
-                {showProgressBar ? (
-                  <View style={styles.progressContainer}>
-                    <View style={styles.progressTrack}>
-                      <Animated.View
-                        style={[
-                          styles.progressFill,
-                          {
-                            width: `${progress}%`,
-                            backgroundColor:
-                              progress >= 80 ? "#16A34A" : "#2563EB",
-                          },
-                        ]}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        styles.progressText,
-                        { fontSize: 11 * fontSizeMultiplier },
-                      ]}
-                    >
-                      {progress}%
-                    </Text>
-                  </View>
-                ) : null}
-
-                {/* ETA / Time */}
-                <View style={styles.cardMeta}>
-                  <View style={styles.cardMetaLeft}>
-                    <Ionicons
-                      name="time-outline"
-                      size={13 * fontSizeMultiplier}
-                      color="#9CA3AF"
-                    />
-                    {isPending ? (
-                      <Text
-                        style={[
-                          styles.timeText,
-                          { fontSize: 11 * fontSizeMultiplier },
-                        ]}
-                      >
-                        Awaiting action
-                      </Text>
-                    ) : !isCompleted ? (
-                      <Text
-                        style={[
-                          styles.timeText,
-                          {
-                            fontSize: 11 * fontSizeMultiplier,
-                            color: "#2563EB",
-                          },
-                        ]}
-                      >
-                        {r.type === "Food Order"
-                          ? remainingText(
+                      {isPending ? (
+                        <Text
+                          style={[
+                            styles.timeText,
+                            { fontSize: 11 * fontSizeMultiplier },
+                          ]}
+                        >
+                          Awaiting action
+                        </Text>
+                      ) : !isCompleted ? (
+                        <Text
+                          style={[
+                            styles.timeText,
+                            {
+                              fontSize: 11 * fontSizeMultiplier,
+                              color: "#2563EB",
+                            },
+                          ]}
+                        >
+                          {r.type === "Food Order"
+                            ? remainingText(
                               r.readyAt,
                               r.estimatedTime,
                               r.acceptedAt
                             )
-                          : "In progress"}
-                      </Text>
-                    ) : (
+                            : "In progress"}
+                        </Text>
+                      ) : (
+                        <Text
+                          style={[
+                            styles.timeText,
+                            {
+                              color: "#16A34A",
+                              fontSize: 11 * fontSizeMultiplier,
+                            },
+                          ]}
+                        >
+                          Completed
+                        </Text>
+                      )}
+                    </View>
+
+                    {r.price ? (
                       <Text
                         style={[
-                          styles.timeText,
-                          {
-                            color: "#16A34A",
-                            fontSize: 11 * fontSizeMultiplier,
-                          },
+                          styles.priceTag,
+                          { fontSize: 12 * fontSizeMultiplier },
                         ]}
                       >
-                        Completed
+                        ₹{r.price}
                       </Text>
-                    )}
+                    ) : null}
                   </View>
 
-                  {r.price ? (
-                    <Text
-                      style={[
-                        styles.priceTag,
-                        { fontSize: 12 * fontSizeMultiplier },
-                      ]}
-                    >
-                      ₹{r.price}
-                    </Text>
+                  {/* Actions */}
+                  {!isCompleted ? (
+                    <View style={styles.actionsRow}>
+                      {isPending ? (
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.actionBtn,
+                            styles.actionBlue,
+                            pressed && {
+                              opacity: 0.9,
+                              transform: [{ scale: 0.97 }],
+                            },
+                          ]}
+                          onPress={() => updateStatus(r.id, "in-progress")}
+                        >
+                          <Ionicons
+                            name="play"
+                            size={15 * fontSizeMultiplier}
+                            color="#fff"
+                          />
+                          <Text
+                            style={[
+                              styles.actionText,
+                              { fontSize: 13 * fontSizeMultiplier },
+                            ]}
+                          >
+                            Start
+                          </Text>
+                        </Pressable>
+                      ) : null}
+
+                      {r.status === "in-progress" ? (
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.actionBtn,
+                            styles.actionGreen,
+                            pressed && {
+                              opacity: 0.9,
+                              transform: [{ scale: 0.97 }],
+                            },
+                          ]}
+                          onPress={() => updateStatus(r.id, "completed")}
+                        >
+                          <Ionicons
+                            name="checkmark-done"
+                            size={15 * fontSizeMultiplier}
+                            color="#fff"
+                          />
+                          <Text
+                            style={[
+                              styles.actionText,
+                              { fontSize: 13 * fontSizeMultiplier },
+                            ]}
+                          >
+                            Complete
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
                   ) : null}
-                </View>
-
-                {/* Actions */}
-                {!isCompleted ? (
-                  <View style={styles.actionsRow}>
-                    {isPending ? (
-                      <Pressable
-                        style={({ pressed }) => [
-                          styles.actionBtn,
-                          styles.actionBlue,
-                          pressed && {
-                            opacity: 0.9,
-                            transform: [{ scale: 0.97 }],
-                          },
-                        ]}
-                        onPress={() => updateStatus(r.id, "in-progress")}
-                      >
-                        <Ionicons
-                          name="play"
-                          size={15 * fontSizeMultiplier}
-                          color="#fff"
-                        />
-                        <Text
-                          style={[
-                            styles.actionText,
-                            { fontSize: 13 * fontSizeMultiplier },
-                          ]}
-                        >
-                          Start
-                        </Text>
-                      </Pressable>
-                    ) : null}
-
-                    {r.status === "in-progress" ? (
-                      <Pressable
-                        style={({ pressed }) => [
-                          styles.actionBtn,
-                          styles.actionGreen,
-                          pressed && {
-                            opacity: 0.9,
-                            transform: [{ scale: 0.97 }],
-                          },
-                        ]}
-                        onPress={() => updateStatus(r.id, "completed")}
-                      >
-                        <Ionicons
-                          name="checkmark-done"
-                          size={15 * fontSizeMultiplier}
-                          color="#fff"
-                        />
-                        <Text
-                          style={[
-                            styles.actionText,
-                            { fontSize: 13 * fontSizeMultiplier },
-                          ]}
-                        >
-                          Complete
-                        </Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                ) : null}
-              </Pressable>
-            );
-          })
-        )}
+                </Pressable>
+              );
+            })
+          )
+        }
 
         <View style={styles.spacer} />
-      </ScrollView>
-    </SafeAreaView>
+      </ScrollView >
+    </SafeAreaView >
   );
 }
 
@@ -1495,20 +1544,36 @@ function StatCard({
   icon: any;
   fontSizeMultiplier: number;
 }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const colors = isDark
+    ? {
+      bgCard: "rgba(13, 17, 23, 0.6)",
+      textMain: "#f0f6fc",
+      textMuted: "#8b949e",
+      glassBorder: "rgba(255, 255, 255, 0.1)",
+    }
+    : {
+      bgCard: "#ffffff",
+      textMain: "#0f172a",
+      textMuted: "#64748b",
+      glassBorder: "rgba(37, 99, 235, 0.12)",
+    };
+
   return (
-    <View style={styles.statCard}>
-      <View style={[styles.statIconBg, { backgroundColor: `${color}18` }]}>
+    <View style={[styles.statCard, { backgroundColor: colors.bgCard, borderColor: colors.glassBorder }]}>
+      <View style={[styles.statIconBg, { backgroundColor: `${color}15` }]}>
         <Ionicons name={icon} size={20 * fontSizeMultiplier} color={color} />
       </View>
       <Text
         style={[
           styles.statNumber,
-          { fontSize: 24 * fontSizeMultiplier, color },
+          { fontSize: 24 * fontSizeMultiplier, color: colors.textMain },
         ]}
       >
         {value}
       </Text>
-      <Text style={[styles.statLabel, { fontSize: 10 * fontSizeMultiplier }]}>
+      <Text style={[styles.statLabel, { fontSize: 10 * fontSizeMultiplier, color: colors.textMuted }]}>
         {label}
       </Text>
       <View style={[styles.statAccent, { backgroundColor: color }]} />
@@ -1559,6 +1624,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     flexShrink: 0,
+  },
+  themeToggle: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
   },
   greeting: {
     fontSize: 11,

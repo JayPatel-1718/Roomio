@@ -4,6 +4,7 @@ import {
     useWindowDimensions, useColorScheme, Platform, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../context/ThemeContext';
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { getAuth } from 'firebase/auth';
 import {
@@ -59,10 +60,10 @@ export default function MenuScreen() {
     const auth = getAuth();
     const user = auth.currentUser;
     const { width } = useWindowDimensions();
-    const systemScheme = useColorScheme();
+    const { theme: currentTheme, mode, setMode } = useTheme();
+    const isDark = currentTheme === 'dark';
     const isWide = width >= 900;
 
-    const [isDark, setIsDark] = useState(systemScheme === 'dark');
     const [items, setItems] = useState<MenuItem[]>([]);
     const [categories, setCategories] = useState<CatDef[]>(DEFAULT_CATS);
     const [expandedCat, setExpandedCat] = useState<string | null>('breakfast');
@@ -961,22 +962,17 @@ export default function MenuScreen() {
             <Animated.View style={{ opacity: fadeAnim, flex: 1 }}>
                 {/* HEADER */}
                 <View style={[S.header, { backgroundColor: T.card }]}>
-                    <View style={S.headerTop}>
-                        <View>
-                            <Text style={[S.headerTitle, { color: T.text }]}>Food Menu</Text>
-                            <Text style={[S.headerSub, { color: T.muted }]}>{items.length} dishes · {categories.length} categories</Text>
-                        </View>
-                        <View style={{ flexDirection: 'row', gap: 10 }}>
-                            <Pressable onPress={() => setIsDark(!isDark)}
-                                style={[S.themeBtn, { backgroundColor: T.glass, borderColor: T.border }]}>
-                                <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={20} color={T.primary} />
-                            </Pressable>
-                            <Pressable onPress={handleCamera}
-                                style={({ pressed }) => [S.scanBtn, pressed && { opacity: 0.9 }]}>
-                                <Ionicons name="camera" size={17} color="#fff" />
-                                <Text style={S.scanTxt}>Scan</Text>
-                            </Pressable>
-                        </View>
+                    <View style={S.headerLeft}>
+                        <Text style={[S.greeting, { color: T.muted }]}>HOTEL MENU</Text>
+                        <Text style={[S.title, { color: T.text }]}>Menu Management</Text>
+                    </View>
+                    <View style={S.headerRight}>
+
+                        <Pressable onPress={handleCamera}
+                            style={({ pressed }) => [S.scanBtn, pressed && { opacity: 0.9 }]}>
+                            <Ionicons name="camera" size={17} color="#fff" />
+                            <Text style={S.scanTxt}>Scan</Text>
+                        </Pressable>
                     </View>
 
                     <View style={[S.importBar, { backgroundColor: T.glass, borderColor: T.border }]}>
@@ -1027,14 +1023,27 @@ const S = StyleSheet.create({
     safe: { flex: 1 },
     overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
     // Header
-    header: { paddingHorizontal: 20, paddingTop: 40, paddingBottom: 16 },
-    headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-    headerTitle: { fontSize: 28, fontWeight: '900', letterSpacing: -0.5 },
-    headerSub: { fontSize: 13, marginTop: 3, fontWeight: '600' },
-    themeBtn: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
+    header: { paddingHorizontal: 20, paddingTop: 40, paddingBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    headerLeft: { flex: 1 },
+    greeting: { fontSize: 13, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
+    title: { fontSize: 28, fontWeight: '900', letterSpacing: -0.5 },
+    headerRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    themeToggle: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    actionRow: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1.5 },
     scanBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#7C3AED', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, gap: 6, shadowColor: '#7C3AED', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 5 },
     scanTxt: { color: '#fff', fontSize: 14, fontWeight: '800' },
-    importBar: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, padding: 4, borderWidth: 1.5 },
+    importBar: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, padding: 4, borderWidth: 1.5, marginTop: 14 },
     importOption: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 9, gap: 5, borderRadius: 10 },
     importTxt: { fontSize: 12, fontWeight: '700' },
     dividerV: { width: 1.5, height: 16 },

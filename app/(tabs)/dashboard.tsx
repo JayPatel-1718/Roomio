@@ -12,8 +12,8 @@ import {
   ActivityIndicator,
   Animated,
   useWindowDimensions,
-  useColorScheme,
 } from "react-native";
+import { useTheme } from "../../context/ThemeContext";
 import { Ionicons } from "@expo/vector-icons";
 import {
   collection,
@@ -62,12 +62,10 @@ export default function Dashboard() {
   const router = useRouter();
   const auth = getAuth();
   const { width } = useWindowDimensions();
-  const systemColorScheme = useColorScheme();
+  const { theme: currentTheme, mode, setMode } = useTheme();
+  const isDark = currentTheme === "dark";
 
   const isWide = width >= 900;
-
-  // ✅ Theme state (dark/light)
-  const [isDark, setIsDark] = useState(systemColorScheme === "dark");
 
   const [user, setUser] = useState<User | null>(auth.currentUser);
 
@@ -734,21 +732,7 @@ export default function Dashboard() {
           </View>
 
           <View style={styles.headerRight}>
-            {/* Theme Toggle */}
-            <Pressable
-              onPress={() => setIsDark(!isDark)}
-              style={({ pressed }) => [
-                styles.themeToggle,
-                { backgroundColor: theme.glass, borderColor: theme.glassBorder },
-                pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-              ]}
-            >
-              <Ionicons
-                name={isDark ? "sunny-outline" : "moon-outline"}
-                size={20}
-                color={theme.primary}
-              />
-            </Pressable>
+
 
             <Pressable
               onPress={() => router.push("/modals/add-guest")}

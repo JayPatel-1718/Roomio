@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
 } from "react-native";
+import { useTheme } from "../../context/ThemeContext";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
@@ -160,6 +161,8 @@ export default function RoomsScreen() {
   const auth = getAuth();
   const user = auth.currentUser;
   const router = useRouter();
+  const { theme: currentTheme, mode, setMode } = useTheme();
+  const isDark = currentTheme === "dark";
   const [occupiedRooms, setOccupiedRooms] = useState<Room[]>([]);
   const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
   const [foodOrders, setFoodOrders] = useState<FoodOrder[]>([]);
@@ -217,6 +220,34 @@ export default function RoomsScreen() {
   useEffect(() => {
     occupiedRoomsRef.current = occupiedRooms;
   }, [occupiedRooms]);
+
+  const colors = isDark
+    ? {
+      bgMain: "#010409",
+      bgCard: "rgba(13, 17, 23, 0.6)",
+      textMain: "#f0f6fc",
+      textMuted: "#8b949e",
+      glass: "rgba(255, 255, 255, 0.03)",
+      glassBorder: "rgba(255, 255, 255, 0.1)",
+      shadow: "rgba(0, 0, 0, 0.6)",
+      primary: "#2563eb",
+      success: "#22c55e",
+      warning: "#f59e0b",
+      danger: "#ef4444",
+    }
+    : {
+      bgMain: "#f8fafc",
+      bgCard: "#ffffff",
+      textMain: "#0f172a",
+      textMuted: "#64748b",
+      glass: "rgba(37, 99, 235, 0.04)",
+      glassBorder: "rgba(37, 99, 235, 0.12)",
+      shadow: "rgba(37, 99, 235, 0.15)",
+      primary: "#2563eb",
+      success: "#16a34a",
+      warning: "#f59e0b",
+      danger: "#dc2626",
+    };
 
   // ---------- Date helpers ----------
   const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -1558,7 +1589,7 @@ This action CANNOT be undone.`,
   const webEditCheckoutValue = checkoutDate ? formatDateTimeLocal(checkoutDate) : "";
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bgMain }]}>
       {/* CONFIRM MODAL */}
       <Modal visible={confirm.open} transparent animationType="fade" onRequestClose={closeConfirm}>
         <View style={styles.confirmOverlay}>
@@ -2495,7 +2526,7 @@ This action CANNOT be undone.`,
       </Modal>
 
       {/* MAIN SCREEN */}
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView style={[styles.container, { backgroundColor: colors.bgMain }]} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.backgroundDecor}>
           <View style={styles.bgCircle1} />
           <View style={styles.bgCircle2} />
@@ -2503,27 +2534,28 @@ This action CANNOT be undone.`,
         </View>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Text style={styles.greeting} numberOfLines={1}>
+            <Text style={[styles.greeting, { color: colors.textMuted }]} numberOfLines={1}>
               Hotel Rooms
             </Text>
-            <Text style={styles.title} numberOfLines={1}>
+            <Text style={[styles.title, { color: colors.textMain }]} numberOfLines={1}>
               Room Management
             </Text>
           </View>
           <View style={styles.headerRight}>
-            <View style={styles.roleBadge}>
-              <Ionicons name="business-outline" size={14} color="#2563EB" />
-              <Text style={styles.role}>ROOMS</Text>
+
+            <View style={[styles.roleBadge, { backgroundColor: isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.1)' }]}>
+              <Ionicons name="business-outline" size={14} color={colors.primary} />
+              <Text style={[styles.role, { color: colors.primary }]}>ROOMS</Text>
             </View>
           </View>
         </View>
         {/* SEARCH BAR */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#9CA3AF" />
+        <View style={[styles.searchContainer, { backgroundColor: colors.bgCard, borderColor: colors.glassBorder }]}>
+          <Ionicons name="search" size={20} color={colors.textMuted} />
           <TextInput
             placeholder="Search rooms (e.g. 102)"
-            placeholderTextColor="#9CA3AF"
-            style={styles.searchInput}
+            placeholderTextColor={colors.textMuted}
+            style={[styles.searchInput, { color: colors.textMain }]}
             value={searchQuery}
             onChangeText={setSearchQuery}
             keyboardType="number-pad"
@@ -2538,7 +2570,7 @@ This action CANNOT be undone.`,
         <View style={styles.globalLogsContainer}>
           <Pressable
             onPress={() => openLogs(null, "food")}
-            style={({ pressed }) => [styles.globalLogsBtn, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
+            style={({ pressed }) => [styles.globalLogsBtn, { backgroundColor: colors.bgCard, borderColor: colors.glassBorder }, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
           >
             <Ionicons name="restaurant-outline" size={18} color="#2563EB" />
             <Text style={styles.globalLogsText}>All Food Orders ({foodOrders.length})</Text>
@@ -2550,7 +2582,7 @@ This action CANNOT be undone.`,
           </Pressable>
           <Pressable
             onPress={() => openLogs(null, "services")}
-            style={({ pressed }) => [styles.globalLogsBtn, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
+            style={({ pressed }) => [styles.globalLogsBtn, { backgroundColor: colors.bgCard, borderColor: colors.glassBorder }, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
           >
             <Ionicons name="construct-outline" size={18} color="#F59E0B" />
             <Text style={styles.globalLogsText}>All Service Requests ({serviceRequests.length})</Text>
@@ -2563,22 +2595,22 @@ This action CANNOT be undone.`,
         </View>
         {/* FLOOR-WISE DISPLAY */}
         {floors.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="bed-outline" size={24} color="#9CA3AF" />
-            <Text style={styles.emptyText}>No rooms found</Text>
+          <View style={[styles.emptyState, { backgroundColor: colors.bgCard, borderColor: colors.glassBorder }]}>
+            <Ionicons name="bed-outline" size={24} color={colors.textMuted} />
+            <Text style={[styles.emptyText, { color: colors.textMuted }]}>No rooms found</Text>
           </View>
         ) : (
           floors.map(([floor, { occupied, available }]) => {
             const isOpen = openFloors[floor] ?? false;
             const totalRooms = occupied.length + available.length;
             return (
-              <View key={floor} style={styles.floorCard}>
+              <View key={floor} style={[styles.floorCard, { backgroundColor: colors.bgCard, borderColor: colors.glassBorder }]}>
                 <Pressable
                   onPress={() => setOpenFloors((p) => ({ ...p, [floor]: !isOpen }))}
                   style={({ pressed }) => [styles.floorHeader, pressed && { opacity: 0.95 }]}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.floorTitle}>{floorLabel(floor)}</Text>
+                    <Text style={[styles.floorTitle, { color: colors.textMain }]}>{floorLabel(floor)}</Text>
                     <Text style={styles.floorSub}>
                       Total: {totalRooms} • Occupied: {occupied.length} • Available: {available.length}
                     </Text>
@@ -2590,7 +2622,7 @@ This action CANNOT be undone.`,
                     {/* Occupied Rooms */}
                     {occupied.length > 0 && (
                       <>
-                        <Text style={styles.sectionTitle}>Occupied</Text>
+                        <Text style={[styles.sectionTitle, { color: colors.primary }]}>Occupied</Text>
                         {occupied.map((room) => {
                           const roomFoodCount = foodCountForRoom(
                             room.roomNumber,
@@ -2839,7 +2871,20 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerLeft: { flex: 1, minWidth: 0 },
-  headerRight: { flexShrink: 0 },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  themeToggle: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 4,
+  },
   greeting: {
     color: "#6B7280",
     fontSize: 12,
@@ -3169,6 +3214,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+  themeToggle: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 4,
   },
   modalIcon: {
     width: 36,

@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { Image, Pressable, SafeAreaView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Image, Pressable, SafeAreaView, StyleSheet, Text, useWindowDimensions, View, Platform } from "react-native";
+import { useTheme } from "../context/ThemeContext";
 
 // Import your logo image
 import logoImage from "../assets/images/logo.png";
@@ -8,115 +9,136 @@ import logoImage from "../assets/images/logo.png";
 export default function Home() {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const { theme: currentTheme } = useTheme();
+  const isDark = currentTheme === "dark";
 
   // Determine if the device is a desktop/tablet (width > 768) for responsive scaling
   const isDesktop = width > 768;
 
   // Responsive values
-  const logoSize = isDesktop ? 140 : 100;
-  const fontSizeTitle = isDesktop ? 48 : 36;
-  const fontSizeSubtitle = isDesktop ? 22 : 18;
-  const fontSizeDesc = isDesktop ? 16 : 14;
-  const featureCardWidth = isDesktop ? 200 : '45%'; // Width for grid
-  const buttonMaxWidth = isDesktop ? 400 : 300;
+  const logoSize = isDesktop ? 42 : 32;
+  const fontSizeTitle = isDesktop ? 56 : 42;
+  const fontSizeSubtitle = isDesktop ? 18 : 16;
+  const buttonMaxWidth = isDesktop ? 220 : 180;
+
+  const themeColors = {
+    background: isDark ? '#05070A' : '#F8FAFC',
+    textPrimary: isDark ? '#FFFFFF' : '#0F172A',
+    textSecondary: isDark ? '#94A3B8' : '#64748B',
+    textMuted: isDark ? '#475569' : '#94A3B8',
+    accent: '#3B82F6',
+    cardBg: isDark ? '#0F172A' : '#FFFFFF',
+    cardBorder: isDark ? '#1E293B' : '#F1F5F9',
+    badgeBg: isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)',
+    footerDot: isDark ? '#10B981' : '#10B981',
+  };
+
+  const features = [
+    {
+      title: "Smart Booking",
+      desc: isDark ? "Automated engine for seamless stays" : "Real-time engine",
+      icon: isDark ? "calendar" : "calendar-outline",
+    },
+    {
+      title: "Guest Analytics",
+      desc: isDark ? "Deep behavioral data & insights" : "Behavioral insights",
+      icon: isDark ? "trending-up" : "stats-chart-outline",
+    },
+    {
+      title: "Staff Coordination",
+      desc: isDark ? "Real-time team workflows & tasks" : "Unified workflows",
+      icon: isDark ? "people" : "people-outline",
+    }
+  ];
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.background }]}>
       <View style={styles.container}>
-        {/* Decorative Background - Responsive scaling */}
+        {/* Background Decor */}
         <View style={styles.backgroundDecor}>
-          <View style={[styles.bgCircle1, isDesktop && styles.bgCircle1Desktop]} />
-          <View style={[styles.bgCircle2, isDesktop && styles.bgCircle2Desktop]} />
-          <View style={[styles.bgCircle3, isDesktop && styles.bgCircle3Desktop]} />
-          <View style={[styles.bgCircle4, isDesktop && styles.bgCircle4Desktop]} />
+          <View style={[styles.bgCircleTop, {
+            backgroundColor: isDark ? 'rgba(59,130,246,0.05)' : 'rgba(59,130,246,0.03)',
+            top: -200, right: -150, width: 600, height: 600
+          }]} />
+          {!isDark && (
+            <View style={[styles.bgCircleBottom, {
+              backgroundColor: 'rgba(59,130,246,0.02)',
+              bottom: -150, left: -200, width: 700, height: 700
+            }]} />
+          )}
         </View>
 
-        {/* Logo Container */}
-        <View style={[styles.logoContainer, { marginBottom: isDesktop ? 48 : 32 }]}>
-          <View style={[styles.logoWrapper, { width: logoSize, height: logoSize }]}>
-            <Image
-              source={logoImage}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
-          </View>
-          <View style={styles.brandContainer}>
-            <Text style={[styles.title, { fontSize: fontSizeTitle }]}>Roomio</Text>
-            <View style={styles.badgeContainer}>
-              <View style={styles.badge}>
-                <Ionicons name="shield-checkmark" size={isDesktop ? 18 : 14} color="#2563EB" />
-                <Text style={[styles.badgeText, { fontSize: isDesktop ? 13 : 11 }]}>SERVICE MANAGEMENT</Text>
-              </View>
-            </View>
-          </View>
+        {/* Header Branding */}
+        <View style={styles.header}>
+          <Image source={logoImage} style={{ width: logoSize, height: logoSize }} resizeMode="contain" />
+          <Text style={[styles.brandName, { color: themeColors.textPrimary }]}>Roomio</Text>
         </View>
 
-        {/* Description */}
-        <View style={[styles.descriptionContainer, { marginBottom: isDesktop ? 48 : 32 }]}>
-          <Text style={[styles.subtitle, { fontSize: fontSizeSubtitle }]}>
+        {/* Main Content */}
+        <View style={styles.mainContent}>
+          {/* Badge */}
+          <View style={[styles.badge, { backgroundColor: themeColors.badgeBg }]}>
+            <Text style={[styles.badgeText, { color: themeColors.accent }]}>
+              {isDark ? '2026 PREMIUM SAAS EDITION' : '2026 PREMIUM SAAS EDITION'}
+            </Text>
+          </View>
+
+          {/* Hero Section */}
+          <Text style={[styles.heroHeading, { color: themeColors.textPrimary, fontSize: fontSizeTitle }]}>
             Complete hotel management solution
           </Text>
-          <Text style={[styles.description, { fontSize: fontSizeDesc }]}>
-            Streamline room assignments, guest services, and hotel operations
-            all in one powerful platform
+          <Text style={[styles.heroSubtext, { color: themeColors.textSecondary, fontSize: fontSizeSubtitle }]}>
+            {isDark
+              ? "Elevate your hospitality experience with a streamlined, intelligent platform built for the next generation of hosts."
+              : "The all-in-one platform for modern hospitality teams.\nExperience seamless control and elevated guest experiences."
+            }
           </Text>
-        </View>
 
-        {/* Features Grid - Adjusted for Desktop */}
-        <View style={[styles.featuresGrid, isDesktop && styles.featuresGridDesktop]}>
-          <View style={[styles.featureCard, { width: featureCardWidth }]}>
-            <View style={styles.featureIcon}>
-              <Ionicons name="bed-outline" size={isDesktop ? 24 : 20} color="#2563EB" />
-            </View>
-            <Text style={styles.featureText}>Room Management</Text>
-          </View>
-          <View style={[styles.featureCard, { width: featureCardWidth }]}>
-            <View style={styles.featureIcon}>
-              <Ionicons name="person-outline" size={isDesktop ? 24 : 20} color="#2563EB" />
-            </View>
-            <Text style={styles.featureText}>Guest Services</Text>
-          </View>
-          <View style={[styles.featureCard, { width: featureCardWidth }]}>
-            <View style={styles.featureIcon}>
-              <Ionicons name="restaurant-outline" size={isDesktop ? 24 : 20} color="#2563EB" />
-            </View>
-            <Text style={styles.featureText}>Food Orders</Text>
-          </View>
-          <View style={[styles.featureCard, { width: featureCardWidth }]}>
-            <View style={styles.featureIcon}>
-              <Ionicons name="analytics-outline" size={isDesktop ? 24 : 20} color="#2563EB" />
-            </View>
-            <Text style={styles.featureText}>Analytics</Text>
-          </View>
-        </View>
-
-        {/* CTA Button */}
-        <View style={[styles.ctaContainer, { marginBottom: isDesktop ? 40 : 24 }]}>
+          {/* CTA */}
           <Pressable
             style={({ pressed }) => [
-              styles.button,
-              pressed && styles.buttonPressed,
-              { maxWidth: buttonMaxWidth }
+              styles.ctaButton,
+              { backgroundColor: themeColors.accent },
+              pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }
             ]}
             onPress={() => router.push("/admin-login")}
           >
-            <View style={styles.buttonContent}>
-              <Text style={styles.buttonText}>Get Started</Text>
-              <Ionicons name="arrow-forward" size={isDesktop ? 22 : 20} color="#FFFFFF" />
-            </View>
+            <Text style={styles.ctaText}>Access Dashboard</Text>
+            <Ionicons name="arrow-forward" size={18} color="#FFF" />
           </Pressable>
-          <Text style={styles.helperText}>
-            Access your admin dashboard
-          </Text>
         </View>
 
-        {/* Footer */}
+        {/* Features Row */}
+        <View style={[styles.featuresRow, isDesktop && styles.featuresRowDesktop]}>
+          {features.map((item, idx) => (
+            <View key={idx} style={[styles.featureCard, {
+              backgroundColor: themeColors.cardBg,
+              borderColor: themeColors.cardBorder,
+              width: isDesktop ? 220 : '100%'
+            }]}>
+              <View style={[styles.featureIconContainer, { backgroundColor: themeColors.badgeBg }]}>
+                <Ionicons name={item.icon as any} size={20} color={themeColors.accent} />
+              </View>
+              <Text style={[styles.featureTitle, { color: themeColors.textPrimary }]}>{item.title}</Text>
+              <Text style={[styles.featureDesc, { color: themeColors.textMuted }]}>{item.desc}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Footer info */}
         <View style={styles.footer}>
-          <View style={styles.versionContainer}>
-            <Text style={styles.versionText}>VERSION 2.4.0</Text>
-            <View style={styles.versionDivider} />
-            <Text style={styles.versionText}>BUILD 902</Text>
-          </View>
+          {isDark ? (
+            <View style={styles.footerRow}>
+              <View style={[styles.dot, { backgroundColor: themeColors.footerDot }]} />
+              <Text style={[styles.footerText, { color: themeColors.textMuted }]}>
+                TRUSTED BY 500+ PREMIUM HOTELS WORLDWIDE
+              </Text>
+            </View>
+          ) : (
+            <Text style={[styles.footerText, { color: themeColors.textMuted, fontSize: 10, letterSpacing: 1 }]}>
+              ROOMIO © 2026 · PREMIUM CLOUD INFRASTRUCTURE
+            </Text>
+          )}
         </View>
       </View>
     </SafeAreaView>
@@ -126,238 +148,138 @@ export default function Home() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#F9FAFB",
   },
   container: {
     flex: 1,
-    backgroundColor: "#F9FAFB",
-    justifyContent: "center",
     alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: 24,
   },
   backgroundDecor: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    overflow: 'hidden',
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    zIndex: -1,
   },
-  bgCircle1: {
-    position: "absolute",
-    top: -100,
-    right: -80,
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: "rgba(37, 99, 235, 0.08)",
+  bgCircleTop: {
+    position: 'absolute',
+    borderRadius: 300,
   },
-  bgCircle1Desktop: {
-    top: -150,
-    right: -100,
-    width: 400,
-    height: 400,
-    borderRadius: 200,
+  bgCircleBottom: {
+    position: 'absolute',
+    borderRadius: 350,
   },
-  bgCircle2: {
-    position: "absolute",
-    top: 120,
-    left: -120,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(37, 99, 235, 0.06)",
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    position: 'absolute',
+    top: 60,
   },
-  bgCircle2Desktop: {
-    left: -150,
-    width: 350,
-    height: 350,
-    borderRadius: 175,
+  brandName: {
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
-  bgCircle3: {
-    position: "absolute",
-    bottom: -60,
-    right: -50,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: "rgba(37, 99, 235, 0.05)",
-  },
-  bgCircle3Desktop: {
-    bottom: -100,
-    right: -100,
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-  },
-  bgCircle4: {
-    position: "absolute",
-    bottom: 100,
-    left: -80,
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: "rgba(37, 99, 235, 0.04)",
-  },
-  bgCircle4Desktop: {
-    bottom: "20%",
-    left: -120,
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-  },
-  logoContainer: {
-    alignItems: "center",
-  },
-  logoWrapper: {
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#2563EB",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  logoImage: {
-    width: "100%",
-    height: "100%",
-  },
-  brandContainer: {
-    alignItems: "center",
-    marginTop: 20,
-  },
-  title: {
-    fontWeight: "700",
-    color: "#111827",
-    letterSpacing: 1,
-  },
-  badgeContainer: {
-    marginTop: 12,
+  mainContent: {
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 60,
   },
   badge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(37, 99, 235, 0.1)",
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 6,
     borderRadius: 20,
-    gap: 6,
+    marginBottom: 24,
   },
   badgeText: {
-    color: "#2563EB",
-    fontWeight: "700",
-    letterSpacing: 1.5,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
-  descriptionContainer: {
-    alignItems: "center",
-    paddingHorizontal: 16,
+  heroHeading: {
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: -1.5,
+    lineHeight: 52,
+    marginBottom: 20,
+    maxWidth: 800,
   },
-  subtitle: {
-    fontWeight: "600",
-    color: "#374151",
-    marginBottom: 8,
+  heroSubtext: {
+    textAlign: 'center',
+    lineHeight: 26,
+    maxWidth: 600,
+    marginBottom: 32,
   },
-  description: {
-    color: "#6B7280",
-    textAlign: "center",
-    lineHeight: 20,
+  ctaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 32,
+    paddingVertical: 18,
+    borderRadius: 40,
+    ...Platform.select({
+      ios: { shadowColor: '#3B82F6', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 12 },
+      android: { elevation: 8 },
+      web: { boxShadow: '0 8px 16px rgba(59, 130, 246, 0.3)' }
+    })
   },
-  featuresGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    gap: 12,
-    paddingHorizontal: 8,
+  ctaText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
-  featuresGridDesktop: {
-    gap: 24,
-    maxWidth: 900,
+  featuresRow: {
+    flexDirection: 'column',
+    gap: 16,
+    width: '100%',
+    alignItems: 'center',
+  },
+  featuresRowDesktop: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 20,
   },
   featureCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
-    alignItems: "center",
+    padding: 24,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 4,
+    alignItems: 'center',
   },
-  featureIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(37, 99, 235, 0.1)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  featureText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#374151",
-    textAlign: "center",
-  },
-  ctaContainer: {
-    width: "100%",
-    alignItems: "center",
-  },
-  button: {
-    backgroundColor: "#2563EB",
-    paddingHorizontal: 40,
-    paddingVertical: 16,
+  featureIconContainer: {
+    width: 48,
+    height: 48,
     borderRadius: 14,
-    shadowColor: "#2563EB",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-    width: "100%",
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
   },
-  buttonPressed: {
-    backgroundColor: "#1D4ED8",
-    transform: [{ scale: 0.98 }],
+  featureTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 6,
   },
-  buttonContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-  },
-  helperText: {
-    fontSize: 13,
-    color: "#9CA3AF",
-    marginTop: 12,
+  featureDesc: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   footer: {
-    alignItems: "center",
-    position: "absolute",
-    bottom: 30,
+    position: 'absolute',
+    bottom: 50,
   },
-  versionContainer: {
-    flexDirection: "row",
-    alignItems: "center",
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
-  versionDivider: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "#D1D5DB",
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
-  versionText: {
-    fontSize: 11,
-    color: "#9CA3AF",
-    fontWeight: "500",
+  footerText: {
+    fontSize: 10,
+    fontWeight: '700',
     letterSpacing: 0.5,
-  },
+  }
 });

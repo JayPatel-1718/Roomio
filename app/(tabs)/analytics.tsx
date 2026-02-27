@@ -1219,8 +1219,7 @@ export default function AnalyticsDashboard() {
               <Ionicons name="download-outline" size={20} color={theme.success} />
             </Pressable>
 
-            {/* Theme Toggle */}
-            <ThemeSwitcher />
+
 
             <View style={[styles.badge, { backgroundColor: `${theme.primary}18` }]}>
               <Ionicons name="trending-up" size={isSmall ? 12 : 14} color={theme.primary} />

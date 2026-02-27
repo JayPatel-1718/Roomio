@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
-import { Animated, Image, SafeAreaView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Animated, Image, SafeAreaView, StyleSheet, Text, useWindowDimensions, View, useColorScheme, Platform } from "react-native";
+import { auth } from "../firebase/firebaseConfig";
 
 // Import your logo image
 import logoImage from "../assets/images/logo.png";
@@ -9,62 +10,88 @@ import logoImage from "../assets/images/logo.png";
 export default function Splash() {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const systemColorScheme = useColorScheme();
+
+  // Theme state - Forced to light theme for splash
+  const isDark = false;
+
+  const [percent, setPercent] = useState(0);
 
   // Determine if the device is a desktop/tablet (width > 600) for responsive scaling
   const isDesktop = width > 600;
 
   // Responsive values
-  const logoSize = isDesktop ? 160 : 100;
-  const fontSizeTitle = isDesktop ? 48 : 36;
-  const fontSizeBadge = isDesktop ? 13 : 11;
-  const fontSizeLoading = isDesktop ? 16 : 14;
-  const spacingMultiplier = isDesktop ? 1.5 : 1;
+  const logoSize = isDesktop ? 120 : 90;
+  const logoCardSize = isDesktop ? 180 : 140;
+  const fontSizeTitle = isDesktop ? 52 : 42;
+  const fontSizeBadge = isDesktop ? 14 : 12;
+  const fontSizeProgress = isDesktop ? 16 : 14;
+  const spacingMultiplier = isDesktop ? 1.4 : 1;
+
+  // Theme colors - matching the premium look of the reference images
+  const themeColors = {
+    background: isDark ? '#05070A' : '#FFFFFF',
+    textPrimary: isDark ? '#FFFFFF' : '#0F172A',
+    textSecondary: isDark ? '#94A3B8' : '#64748B',
+    textMuted: isDark ? '#475569' : '#94A3B8',
+    accent: '#3B82F6',
+    accentGlow: 'rgba(59, 130, 246, 0.3)',
+    loaderBg: isDark ? '#1E293B' : '#F1F5F9',
+    cardBg: isDark ? '#0F172A' : '#FFFFFF',
+    cardBorder: isDark ? '#1E293B' : '#F1F5F9',
+    // Background circles
+    circle1: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.05)',
+    circle2: isDark ? 'rgba(59, 130, 246, 0.05)' : 'rgba(59, 130, 246, 0.03)',
+  };
 
   const progress = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.8)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  const logoFade = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Fade in and scale animation
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        tension: 50,
-        friction: 7,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    // Add listener for percentage display
+    const listener = progress.addListener(({ value }) => {
+      setPercent(Math.floor(value * 100));
+    });
 
-    // Pulse animation
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
+    // Start animations
+    Animated.sequence([
+      Animated.delay(200),
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
           toValue: 1,
           duration: 1000,
           useNativeDriver: true,
         }),
-      ])
-    ).start();
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 40,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+        Animated.timing(logoFade, {
+          toValue: 1,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
 
-    // Progress bar animation
     Animated.timing(progress, {
       toValue: 1,
-      duration: 2200,
+      duration: 3200,
       useNativeDriver: false,
     }).start(() => {
-      router.replace("/home");
+      const user = auth.currentUser;
+      if (user) {
+        router.replace("/(tabs)/dashboard");
+      } else {
+        router.replace("/home");
+      }
     });
+
+    return () => progress.removeListener(listener);
   }, []);
 
   const widthInterpolated = progress.interpolate({
@@ -73,20 +100,18 @@ export default function Splash() {
   });
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.background }]}>
       <View style={styles.container}>
-        {/* Decorative Background - Responsive scaling */}
+        {/* Decorative Background */}
         <View style={styles.backgroundDecor}>
-          <View style={[styles.bgCircle1, isDesktop && styles.bgCircle1Desktop]} />
-          <View style={[styles.bgCircle2, isDesktop && styles.bgCircle2Desktop]} />
-          <View style={[styles.bgCircle3, isDesktop && styles.bgCircle3Desktop]} />
-          <View style={[styles.bgCircle4, isDesktop && styles.bgCircle4Desktop]} />
+          <View style={[styles.bgCircle1, { backgroundColor: themeColors.circle1 }]} />
+          <View style={[styles.bgCircle2, { backgroundColor: themeColors.circle2 }]} />
         </View>
 
-        {/* Logo Section */}
+        {/* Main Brand Section */}
         <Animated.View
           style={[
-            styles.logoSection,
+            styles.brandSection,
             {
               opacity: fadeAnim,
               transform: [{ scale: scaleAnim }],
@@ -94,91 +119,66 @@ export default function Splash() {
             },
           ]}
         >
-          <Animated.View
-            style={[
-              styles.logoContainer,
-              { transform: [{ scale: pulseAnim }] },
-            ]}
-          >
-            <View style={[styles.logoWrapper, { width: logoSize, height: logoSize }]}>
-              <Image
-                source={logoImage}
-                style={styles.logoImage}
-                resizeMode="contain"
-              />
-            </View>
+          {/* Detailed Logo Card - Matching the image's centered icon looks */}
+          <Animated.View style={[styles.logoCard, {
+            backgroundColor: themeColors.cardBg,
+            borderColor: themeColors.cardBorder,
+            width: logoCardSize,
+            height: logoCardSize,
+            opacity: logoFade,
+          }]}>
+            <Image
+              source={logoImage}
+              style={{ width: logoSize, height: logoSize }}
+              resizeMode="contain"
+            />
           </Animated.View>
 
-          <View style={styles.brandContainer}>
-            <Text style={[styles.logo, { fontSize: fontSizeTitle }]}>Roomio</Text>
-            <View style={styles.badge}>
-              <Ionicons name="shield-checkmark" size={isDesktop ? 18 : 14} color="#2563EB" />
-              <Text style={[styles.badgeText, { fontSize: fontSizeBadge }]}>SERVICE MANAGEMENT</Text>
-            </View>
-          </View>
+          <Text style={[styles.title, { fontSize: fontSizeTitle, color: themeColors.textPrimary }]}>
+            Roomio
+          </Text>
+          <Text style={[styles.subtitle, { fontSize: fontSizeBadge, color: themeColors.textSecondary }]}>
+            SERVICE MANAGEMENT
+          </Text>
         </Animated.View>
 
-        {/* Progress Section */}
-        <Animated.View style={[styles.progressSection, { opacity: fadeAnim }]}>
-          <View style={[styles.loader, isDesktop && styles.loaderDesktop]}>
+        {/* Progress & Loading Section */}
+        <Animated.View style={[styles.progressContainer, { opacity: fadeAnim }]}>
+          <View style={styles.progressHeader}>
+            <Text style={[styles.preparingText, { color: themeColors.textSecondary, fontSize: fontSizeProgress }]}>
+              Preparing your workspace
+            </Text>
+            <Text style={[styles.percentageText, { color: themeColors.accent, fontSize: fontSizeProgress }]}>
+              {percent}%
+            </Text>
+          </View>
+
+          <View style={[styles.progressBar, { backgroundColor: themeColors.loaderBg }]}>
             <Animated.View
-              style={[styles.loaderFill, { width: widthInterpolated }]}
+              style={[
+                styles.progressFill,
+                { width: widthInterpolated, backgroundColor: themeColors.accent }
+              ]}
             >
-              <View style={styles.loaderGlow} />
+              <View style={styles.progressGlow} />
             </Animated.View>
           </View>
 
-          <View style={[styles.loadingContainer, { marginTop: 24 * spacingMultiplier }]}>
-            <View style={styles.loadingDots}>
-              <Animated.View
-                style={[
-                  styles.dot,
-                  {
-                    opacity: progress.interpolate({
-                      inputRange: [0, 0.33, 0.66, 1],
-                      outputRange: [0.3, 1, 0.3, 1],
-                    }),
-                  },
-                ]}
-              />
-              <Animated.View
-                style={[
-                  styles.dot,
-                  {
-                    opacity: progress.interpolate({
-                      inputRange: [0, 0.33, 0.66, 1],
-                      outputRange: [0.3, 0.3, 1, 0.3],
-                    }),
-                  },
-                ]}
-              />
-              <Animated.View
-                style={[
-                  styles.dot,
-                  {
-                    opacity: progress.interpolate({
-                      inputRange: [0, 0.33, 0.66, 1],
-                      outputRange: [0.3, 1, 0.3, 1],
-                    }),
-                  },
-                ]}
-              />
-            </View>
-            <Text style={[styles.loading, { fontSize: fontSizeLoading }]}>Initializing System</Text>
+          <View style={styles.loadingInfo}>
+            <Text style={[styles.synchronizingText, { color: themeColors.textMuted }]}>
+              {percent < 60 ? 'SYNCHRONIZING ASSETS' : 'ENTERPRISE EDITION'}
+            </Text>
           </View>
         </Animated.View>
 
         {/* Footer */}
         <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>
-          <View style={styles.statusContainer}>
-            <View style={styles.statusDot} />
-            <Text style={styles.statusText}>Secure Connection</Text>
-          </View>
-          <View style={styles.versionContainer}>
-            <Text style={styles.versionText}>VERSION 2.4.0</Text>
-            <View style={styles.versionDivider} />
-            <Text style={styles.versionText}>BUILD 902</Text>
-          </View>
+          <Text style={[styles.footerText, { color: themeColors.textMuted }]}>
+            {isDark ? 'V2.4.0 \u2022 Enterprise Edition' : 'ENTERPRISE EDITION'}
+          </Text>
+          <Text style={[styles.buildText, { color: themeColors.textMuted }]}>
+            {isDark ? 'BUILD 902' : 'v1.2.0.402'}
+          </Text>
         </Animated.View>
       </View>
     </SafeAreaView>
@@ -188,14 +188,12 @@ export default function Splash() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#F9FAFB",
   },
   container: {
     flex: 1,
-    backgroundColor: "#F9FAFB",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: 40,
   },
   backgroundDecor: {
     position: "absolute",
@@ -203,19 +201,11 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    overflow: 'hidden', // Keeps circles inside on mobile
+    overflow: 'hidden',
   },
   bgCircle1: {
     position: "absolute",
     top: -100,
-    right: -80,
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: "rgba(37, 99, 235, 0.08)",
-  },
-  bgCircle1Desktop: {
-    top: -150,
     right: -100,
     width: 400,
     height: 400,
@@ -223,188 +213,108 @@ const styles = StyleSheet.create({
   },
   bgCircle2: {
     position: "absolute",
-    top: "40%",
-    left: -120,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(37, 99, 235, 0.06)",
-  },
-  bgCircle2Desktop: {
+    bottom: -150,
     left: -150,
-    width: 350,
-    height: 350,
-    borderRadius: 175,
+    width: 500,
+    height: 500,
+    borderRadius: 250,
   },
-  bgCircle3: {
-    position: "absolute",
-    bottom: -60,
-    right: -50,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: "rgba(37, 99, 235, 0.05)",
-  },
-  bgCircle3Desktop: {
-    bottom: -100,
-    right: -100,
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-  },
-  bgCircle4: {
-    position: "absolute",
-    bottom: "30%",
-    left: -80,
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: "rgba(37, 99, 235, 0.04)",
-  },
-  bgCircle4Desktop: {
-    bottom: "20%",
-    left: -120,
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-  },
-  logoSection: {
+  brandSection: {
     alignItems: "center",
   },
-  logoContainer: {
-    marginBottom: 24,
-  },
-  logoWrapper: {
+  logoCard: {
+    borderRadius: 32,
+    borderWidth: 1.5,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#2563EB",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
+    marginBottom: 32,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.15,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 12,
+      },
+      web: {
+        boxShadow: '0 12px 24px rgba(0,0,0,0.1)',
+      }
+    }),
   },
-  logoImage: {
+  title: {
+    fontWeight: "800",
+    letterSpacing: -1,
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontWeight: "700",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+  },
+  progressContainer: {
     width: "100%",
-    height: "100%",
-  },
-  brandContainer: {
+    maxWidth: 500,
     alignItems: "center",
   },
-  logo: {
-    fontWeight: "700",
-    color: "#111827",
-    letterSpacing: 1,
-    marginBottom: 12,
-  },
-  badge: {
+  progressHeader: {
+    width: "100%",
     flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(37, 99, 235, 0.1)",
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 6,
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginBottom: 12,
+    paddingHorizontal: 2,
   },
-  badgeText: {
-    color: "#2563EB",
-    fontWeight: "700",
-    letterSpacing: 1.5,
+  preparingText: {
+    fontWeight: "600",
   },
-  progressSection: {
+  percentageText: {
+    fontWeight: "800",
+    fontVariant: ['tabular-nums'],
+  },
+  progressBar: {
     width: "100%",
-    alignItems: "center",
-  },
-  loader: {
-    width: "80%",
-    height: 8,
-    backgroundColor: "#E5E7EB",
-    borderRadius: 100,
+    height: 6,
+    borderRadius: 3,
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
   },
-  loaderDesktop: {
-    height: 10,
-    maxWidth: 500, // Prevents bar from being too wide on large monitors
-  },
-  loaderFill: {
+  progressFill: {
     height: "100%",
-    backgroundColor: "#2563EB",
-    borderRadius: 100,
-    position: "relative",
+    borderRadius: 3,
   },
-  loaderGlow: {
-    position: "absolute",
+  progressGlow: {
+    position: 'absolute',
     right: 0,
     top: 0,
     bottom: 0,
-    width: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
-    borderRadius: 100,
+    width: 10,
+    backgroundColor: 'rgba(255,255,255,0.4)',
   },
-  loadingContainer: {
+  loadingInfo: {
+    marginTop: 20,
     alignItems: "center",
   },
-  loadingDots: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 12,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#2563EB",
-  },
-  loading: {
-    color: "#6B7280",
-    fontWeight: "600",
-    letterSpacing: 0.5,
+  synchronizingText: {
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 1,
   },
   footer: {
     position: "absolute",
-    bottom: 40,
+    bottom: 50,
     alignItems: "center",
   },
-  statusContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(22, 163, 74, 0.1)",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 8,
-    marginBottom: 10,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#16A34A",
-  },
-  statusText: {
-    fontSize: 12,
-    color: "#16A34A",
-    fontWeight: "600",
-  },
-  versionContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  versionDivider: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "#D1D5DB",
-  },
-  versionText: {
+  footerText: {
     fontSize: 11,
-    color: "#9CA3AF",
-    fontWeight: "500",
+    fontWeight: "700",
     letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  buildText: {
+    fontSize: 10,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    opacity: 0.6,
   },
 });
