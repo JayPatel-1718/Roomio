@@ -25,6 +25,8 @@ import {
   serverTimestamp,
   Timestamp,
   addDoc,
+  orderBy,
+  limit,
 } from "firebase/firestore";
 import { Audio } from "expo-av";
 import * as Notifications from "expo-notifications";
@@ -62,7 +64,7 @@ export default function Dashboard() {
   const router = useRouter();
   const auth = getAuth();
   const { width } = useWindowDimensions();
-  const { theme: currentTheme, mode, setMode } = useTheme();
+  const { theme: currentTheme, colors: theme, mode, setMode } = useTheme();
   const isDark = currentTheme === "dark";
 
   const isWide = width >= 900;
@@ -71,12 +73,15 @@ export default function Dashboard() {
 
   const [activeRooms, setActiveRooms] = useState(0);
   const [availableRooms, setAvailableRooms] = useState(0);
+  const [occupiedCount, setOccupiedCount] = useState(0);
+  const [totalRooms, setTotalRooms] = useState(0);
+  const [occupancyRate, setOccupancyRate] = useState(0);
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
   const [requests, setRequests] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
 
   const [showNotifications, setShowNotifications] = useState(false);
-
   const [showTimeModal, setShowTimeModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<SelectedRequest | null>(null);
   const [selectedTime, setSelectedTime] = useState<number>(15);
@@ -169,78 +174,55 @@ export default function Dashboard() {
 
     const uid = user.uid;
 
+    // Combined Rooms Listener for stats
     const roomsRef = collection(db, "users", uid, "rooms");
+    const unsubRooms = onSnapshot(roomsRef, (snap) => {
+      const allRooms = snap.docs.map(d => d.data());
+      setTotalRooms(snap.size);
 
-    const activeQuery = query(roomsRef, where("status", "==", "occupied"));
-    const unsubActive = onSnapshot(
-      activeQuery,
-      (snap) => setActiveRooms(snap.size),
-      (err) => {
-        console.error("Active rooms listener error:", err);
-        showPermissionAlertOnce(
-          "Firestore Error",
-          "Missing permission to read rooms. Check Firestore rules."
-        );
-      }
+      const occupied = allRooms.filter(r => r.status === "occupied").length;
+      const available = allRooms.filter(r => r.status === "available").length;
+
+      setActiveRooms(occupied + available); // "Active" as in operational
+      setOccupiedCount(occupied); // Helper for UI
+      setAvailableRooms(available);
+
+      const rate = snap.size > 0 ? (occupied / snap.size) * 100 : 0;
+      setOccupancyRate(Math.round(rate));
+    });
+
+    // Recent Activity (Guests)
+    const guestsQuery = query(
+      collection(db, "guests"),
+      where("adminId", "==", uid),
+      orderBy("createdAt", "desc"),
+      limit(5)
     );
+    const unsubGuests = onSnapshot(guestsQuery, (snap) => {
+      setRecentActivity(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
 
-    const availableQuery = query(roomsRef, where("status", "==", "available"));
-    const unsubAvailable = onSnapshot(
-      availableQuery,
-      (snap) => setAvailableRooms(snap.size),
-      (err) => {
-        console.error("Available rooms listener error:", err);
-        showPermissionAlertOnce(
-          "Firestore Error",
-          "Missing permission to read rooms. Check Firestore rules."
-        );
-      }
+    const requestsQuery = query(
+      collection(db, "serviceRequests"),
+      where("adminId", "==", uid),
+      where("status", "==", "pending")
     );
-
-    const requestsQuery = query(collection(db, "serviceRequests"), where("adminId", "==", uid));
-
-    const unsubRequests = onSnapshot(
-      requestsQuery,
-      (snap) => {
-        const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        const pendingOnly = all.filter((r: any) => (r.status || "pending") === "pending");
-        setRequests(pendingOnly);
-      },
-      (err) => {
-        console.error("Service requests listener error:", err);
-        showPermissionAlertOnce(
-          "Permission Denied",
-          "Your Firestore rules are blocking access to serviceRequests.\n\nFix rules to allow admin read where adminId == auth.uid."
-        );
-      }
-    );
+    const unsubRequests = onSnapshot(requestsQuery, (snap) => {
+      setRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
 
     const ordersQuery = query(
       collection(db, "foodOrders"),
       where("adminId", "==", uid),
       where("status", "==", "pending")
     );
-
-    const unsubOrders = onSnapshot(
-      ordersQuery,
-      (snap) => {
-        console.log("📦 Food orders received:", snap.size);
-        const orderData = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setOrders(orderData);
-      },
-      (err) => {
-        console.error("Food orders listener error:", err);
-        console.error("Error details:", err.code, err.message);
-        showPermissionAlertOnce(
-          "Food Orders Error",
-          `Cannot read food orders: ${err.message}\n\nCheck rules for /foodOrders collection and adminId query.`
-        );
-      }
-    );
+    const unsubOrders = onSnapshot(ordersQuery, (snap) => {
+      setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
 
     return () => {
-      unsubActive();
-      unsubAvailable();
+      unsubRooms();
+      unsubGuests();
       unsubRequests();
       unsubOrders();
     };
@@ -356,42 +338,7 @@ export default function Dashboard() {
     }
   };
 
-  // ✅ Dynamic theme object
-  const theme = isDark
-    ? {
-      bgMain: "#010409",
-      bgCard: "rgba(13, 17, 23, 0.6)",
-      bgNav: "rgba(1, 4, 9, 0.8)",
-      textMain: "#f0f6fc",
-      textMuted: "#8b949e",
-      glass: "rgba(255, 255, 255, 0.03)",
-      glassBorder: "rgba(255, 255, 255, 0.1)",
-      shadow: "rgba(0, 0, 0, 0.6)",
-      primary: "#2563eb",
-      primaryHover: "#1d4ed8",
-      primaryGlow: "rgba(37, 99, 235, 0.35)",
-      accent: "#38bdf8",
-      success: "#22c55e",
-      warning: "#f59e0b",
-      danger: "#ef4444",
-    }
-    : {
-      bgMain: "#f8fafc",
-      bgCard: "#ffffff",
-      bgNav: "rgba(248, 250, 252, 0.9)",
-      textMain: "#0f172a",
-      textMuted: "#64748b",
-      glass: "rgba(37, 99, 235, 0.04)",
-      glassBorder: "rgba(37, 99, 235, 0.12)",
-      shadow: "rgba(37, 99, 235, 0.15)",
-      primary: "#2563eb",
-      primaryHover: "#1d4ed8",
-      primaryGlow: "rgba(37, 99, 235, 0.25)",
-      accent: "#0ea5e9",
-      success: "#16a34a",
-      warning: "#f59e0b",
-      danger: "#dc2626",
-    };
+
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -415,890 +362,505 @@ export default function Dashboard() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bgMain }]}>
-      {/* TIME SELECTION MODAL */}
-      <Modal
-        visible={showTimeModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowTimeModal(false)}
-      >
-        <Pressable
-          style={[styles.timeModalOverlay, { backgroundColor: `${theme.shadow}99` }]}
-          onPress={() => setShowTimeModal(false)}
-        >
-          <Pressable
-            style={[
-              styles.timeModalCard,
-              {
-                backgroundColor: theme.bgCard,
-                borderColor: theme.glassBorder,
-                maxWidth: isWide ? 480 : 400,
-              },
-            ]}
-            onPress={() => { }}
+      <View style={styles.mainLayout}>
+        <View style={styles.mainArea}>
+          {/* TIME SELECTION MODAL */}
+          <Modal
+            visible={showTimeModal}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowTimeModal(false)}
           >
-            <View style={styles.timeModalHeader}>
-              <View style={[styles.timeModalIcon, { backgroundColor: `${theme.primary}18` }]}>
-                <Ionicons name="time-outline" size={28} color={theme.primary} />
+            <Pressable
+              style={[styles.timeModalOverlay, { backgroundColor: `${theme.shadow}99` }]}
+              onPress={() => setShowTimeModal(false)}
+            >
+              <Pressable
+                style={[
+                  styles.timeModalCard,
+                  {
+                    backgroundColor: theme.bgCard,
+                    borderColor: theme.glassBorder,
+                    maxWidth: 480,
+                  },
+                ]}
+                onPress={() => { }}
+              >
+                <View style={styles.timeModalHeader}>
+                  <View style={[styles.timeModalIcon, { backgroundColor: `${theme.primary}18` }]}>
+                    <Ionicons name="time-outline" size={28} color={theme.primary} />
+                  </View>
+                  <Text style={[styles.timeModalTitle, { color: theme.textMain }]}>
+                    Set Estimated Time
+                  </Text>
+                  <Text style={[styles.timeModalSubtitle, { color: theme.textMuted }]}>
+                    How long will this take to complete?
+                  </Text>
+                </View>
+
+                <View style={styles.timeGrid}>
+                  {TIME_OPTIONS.map((time) => (
+                    <Pressable
+                      key={time}
+                      onPress={() => setSelectedTime(time)}
+                      style={({ pressed }) => [
+                        styles.timeOption,
+                        {
+                          backgroundColor:
+                            selectedTime === time ? `${theme.primary}18` : theme.glass,
+                          borderColor: selectedTime === time ? theme.primary : theme.glassBorder,
+                        },
+                        pressed && { opacity: 0.9, transform: [{ scale: 0.97 }] },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.timeOptionText,
+                          { color: selectedTime === time ? theme.primary : theme.textMain },
+                        ]}
+                      >
+                        {time}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.timeOptionLabel,
+                          { color: selectedTime === time ? theme.primary : theme.textMuted },
+                        ]}
+                      >
+                        min
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <View style={styles.timeModalActions}>
+                  <Pressable
+                    onPress={() => setShowTimeModal(false)}
+                    style={({ pressed }) => [
+                      styles.timeCancelBtn,
+                      { backgroundColor: theme.glass, borderColor: theme.glassBorder },
+                      pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+                    ]}
+                  >
+                    <Text style={[styles.timeCancelText, { color: theme.textMuted }]}>Cancel</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={acceptFoodOrderWithTime}
+                    style={({ pressed }) => [
+                      styles.timeConfirmBtn,
+                      { backgroundColor: theme.success },
+                      pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+                    ]}
+                  >
+                    <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                    <Text style={styles.timeConfirmText}>Accept</Text>
+                  </Pressable>
+                </View>
+              </Pressable>
+            </Pressable>
+          </Modal>
+
+          <Animated.ScrollView
+            style={[styles.container, { opacity: fadeAnim }]}
+            contentContainerStyle={[
+              styles.content,
+              isWide && styles.contentWide
+            ]}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* NEW HEADER DESIGN */}
+            <View style={styles.header}>
+              <View style={styles.headerLeft}>
+                <Text style={[styles.greeting, { color: theme.textMuted }]}>
+                  {new Date().getHours() < 12 ? "GOOD MORNING" : "GOOD AFTERNOON"}, ADMIN
+                </Text>
+                <Text style={[styles.title, { color: theme.textMain }]}>
+                  Dashboard Overview
+                </Text>
               </View>
-              <Text style={[styles.timeModalTitle, { color: theme.textMain }]}>
-                Set Estimated Time
-              </Text>
-              <Text style={[styles.timeModalSubtitle, { color: theme.textMuted }]}>
-                How long will this take to complete?
-              </Text>
-            </View>
 
-            <View style={styles.timeGrid}>
-              {TIME_OPTIONS.map((time) => (
+              <View style={styles.headerRight}>
                 <Pressable
-                  key={time}
-                  onPress={() => setSelectedTime(time)}
-                  style={({ pressed }) => [
-                    styles.timeOption,
-                    {
-                      backgroundColor:
-                        selectedTime === time ? `${theme.primary}18` : theme.glass,
-                      borderColor: selectedTime === time ? theme.primary : theme.glassBorder,
-                    },
-                    pressed && { opacity: 0.9, transform: [{ scale: 0.97 }] },
-                  ]}
+                  onPress={() => setMode(isDark ? "light" : "dark")}
+                  style={[styles.headerToolBtn, { borderColor: theme.glassBorder }]}
                 >
-                  <Text
-                    style={[
-                      styles.timeOptionText,
-                      { color: selectedTime === time ? theme.primary : theme.textMain },
-                    ]}
-                  >
-                    {time}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.timeOptionLabel,
-                      { color: selectedTime === time ? theme.primary : theme.textMuted },
-                    ]}
-                  >
-                    min
-                  </Text>
+                  <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={20} color={theme.textMain} />
                 </Pressable>
-              ))}
+
+                <Pressable style={[styles.headerToolBtn, { borderColor: theme.glassBorder }]}>
+                  <Ionicons name="notifications-outline" size={20} color={theme.textMain} />
+                  {requests.length + orders.length > 0 && (
+                    <View style={[styles.headerBadge, { backgroundColor: theme.danger }]} />
+                  )}
+                </Pressable>
+
+                {isWide && <View style={[styles.headerDivider, { backgroundColor: theme.glassBorder }]} />}
+
+                <Pressable
+                  onPress={() => router.push("/modals/add-guest")}
+                  style={[styles.desktopAddBtn, { backgroundColor: theme.primary }]}
+                >
+                  <Ionicons name="add" size={20} color="#fff" />
+                  <Text style={styles.desktopAddBtnText}>Add Guest</Text>
+                </Pressable>
+              </View>
             </View>
 
-            <View style={styles.timeModalActions}>
-              <Pressable
-                onPress={() => setShowTimeModal(false)}
-                style={({ pressed }) => [
-                  styles.timeCancelBtn,
-                  { backgroundColor: theme.glass, borderColor: theme.glassBorder },
-                  pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-                ]}
-              >
-                <Text style={[styles.timeCancelText, { color: theme.textMuted }]}>Cancel</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={acceptFoodOrderWithTime}
-                style={({ pressed }) => [
-                  styles.timeConfirmBtn,
-                  { backgroundColor: theme.success },
-                  pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-                ]}
-              >
-                <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                <Text style={styles.timeConfirmText}>Accept</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* Notifications Modal */}
-      <Modal
-        visible={showNotifications}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowNotifications(false)}
-      >
-        <Pressable
-          style={[styles.modalOverlay, { backgroundColor: `${theme.shadow}99` }]}
-          onPress={() => setShowNotifications(false)}
-        >
-          <Pressable
-            style={[
-              styles.modalCard,
-              {
-                backgroundColor: theme.bgCard,
-                borderColor: theme.glassBorder,
-                maxWidth: isWide ? 600 : undefined,
-              },
-            ]}
-            onPress={() => { }}
-          >
-            <View style={styles.modalHeader}>
-              <View style={styles.modalHeaderLeft}>
-                <View style={[styles.modalIcon, { backgroundColor: `${theme.primary}18` }]}>
-                  <Ionicons name="notifications-outline" size={20} color={theme.primary} />
+            {/* SUMMARY CARDS GRID */}
+            <View style={styles.metricsGrid}>
+              <View style={[styles.metricCard, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
+                <View style={styles.metricHeaderRow}>
+                  <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Active Rooms</Text>
+                  <View style={[styles.metricDot, { backgroundColor: theme.success }]} />
                 </View>
                 <View>
-                  <Text style={[styles.modalTitle, { color: theme.textMain }]}>Notifications</Text>
-                  <Text style={[styles.modalSubtitle, { color: theme.textMuted }]}>
-                    Service Requests & Food Orders
-                  </Text>
+                  <Text style={[styles.metricValue, { color: theme.textMain }]}>{activeRooms}</Text>
+                  <Text style={[styles.metricTrend, { color: theme.textMuted }]}>Total active</Text>
                 </View>
               </View>
 
-              <Pressable
-                onPress={() => setShowNotifications(false)}
-                style={({ pressed }) => [
-                  styles.modalClose,
-                  { backgroundColor: theme.glass, borderColor: theme.glassBorder },
-                  pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] },
-                ]}
-              >
-                <Ionicons name="close" size={18} color={theme.textMuted} />
-              </Pressable>
+              <View style={[styles.metricCard, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
+                <View style={styles.metricHeaderRow}>
+                  <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Available Rooms</Text>
+                  <View style={[styles.metricDot, { backgroundColor: theme.warning }]} />
+                </View>
+                <View>
+                  <Text style={[styles.metricValue, { color: theme.textMain }]}>{availableRooms}</Text>
+                  <Text style={[styles.metricTrend, { color: theme.textMuted }]}>Ready now</Text>
+                </View>
+              </View>
+
+              <View style={[styles.metricCard, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
+                <View style={styles.metricHeaderRow}>
+                  <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Occupied Rooms</Text>
+                  <View style={[styles.metricDot, { backgroundColor: theme.primary }]} />
+                </View>
+                <View>
+                  <Text style={[styles.metricValue, { color: theme.textMain }]}>{occupiedCount}</Text>
+                  <Text style={[styles.metricTrend, { color: theme.textMuted }]}>Currently taken</Text>
+                </View>
+              </View>
+
+              <View style={[styles.metricCard, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
+                <View style={styles.metricHeaderRow}>
+                  <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Occupancy Rate</Text>
+                  <View style={[styles.metricTrendPill, { backgroundColor: `${theme.success}15` }]}>
+                    <Ionicons name="trending-up" size={10} color={theme.success} />
+                    <Text style={[styles.metricTrendPillText, { color: theme.success }]}>+2%</Text>
+                  </View>
+                </View>
+                <View>
+                  <Text style={[styles.metricValue, { color: theme.textMain }]}>{occupancyRate}%</Text>
+                  <Text style={[styles.metricTrend, { color: theme.textMuted }]}>Target 90%</Text>
+                </View>
+              </View>
             </View>
 
-            <ScrollView
-              style={styles.modalBody}
-              contentContainerStyle={styles.modalBodyContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {/* Service Requests */}
-              <View style={styles.modalSectionHeader}>
-                <View style={styles.modalSectionLeft}>
-                  <View style={[styles.sectionIconSmall, { backgroundColor: theme.primary }]}>
-                    <Ionicons name="construct-outline" size={16} color="#fff" />
-                  </View>
-                  <Text style={[styles.modalSectionTitle, { color: theme.textMain }]}>
-                    Service Requests
-                  </Text>
-                </View>
-                <View style={[styles.modalCountPill, { backgroundColor: theme.glass }]}>
-                  <Text style={[styles.modalCountText, { color: theme.primary }]}>
-                    {requests.length}
-                  </Text>
-                </View>
-              </View>
-
-              {requests.length === 0 ? (
-                <View
-                  style={[
-                    styles.modalEmpty,
-                    { backgroundColor: theme.glass, borderColor: theme.glassBorder },
-                  ]}
-                >
-                  <Ionicons name="clipboard-outline" size={22} color={theme.textMuted} />
-                  <Text style={[styles.modalEmptyText, { color: theme.textMuted }]}>
-                    No pending service requests
-                  </Text>
-                </View>
-              ) : (
-                requests.map((r) => (
-                  <View
-                    key={r.id}
-                    style={[
-                      styles.modalItem,
-                      { backgroundColor: theme.glass, borderColor: theme.glassBorder },
-                    ]}
-                  >
-                    <View style={styles.modalItemLeft}>
-                      <View style={[styles.roomPill, { backgroundColor: `${theme.primary}12` }]}>
-                        <Text style={[styles.roomPillText, { color: theme.primary }]}>
-                          Room {r.roomNumber ?? "-"}
-                        </Text>
-                      </View>
-
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.modalItemTitle, { color: theme.textMain }]}>
-                          {r.type ?? "Service"}
-                        </Text>
-                        <Text style={[styles.modalItemSub, { color: theme.textMuted }]}>
-                          {r.guestName ? `Guest: ${r.guestName}` : "Guest: -"}
-                          {r.guestMobile ? ` • ${r.guestMobile}` : ""}
-                        </Text>
-                      </View>
+            {/* MIDDLE SECTION: SERVICE & FOOD */}
+            <View style={[styles.sectionsRow, isWide && styles.sectionsRowWide]}>
+              {/* SERVICE REQUESTS */}
+              <View style={[styles.sectionCard, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
+                <View style={styles.sectionCardHeader}>
+                  <View style={styles.sectionHeaderLeftContent}>
+                    <Text style={[styles.sectionTitle, { color: theme.textMain }]}>Service Requests</Text>
+                    <View style={[styles.badgePill, { backgroundColor: theme.bgMain }]}>
+                      <Text style={[styles.badgePillText, { color: theme.textMuted }]}>{requests.length}</Text>
                     </View>
+                  </View>
+                  <Pressable>
+                    <Text style={[styles.viewAllText, { color: theme.primary }]}>View All</Text>
+                  </Pressable>
+                </View>
 
-                    <View style={styles.modalItemRight}>
+                {requests.length === 0 ? (
+                  <View style={styles.innerEmpty}>
+                    <View style={[styles.innerEmptyIcon, { backgroundColor: theme.bgMain }]}>
+                      <Ionicons name="clipboard-outline" size={32} color={theme.textMuted} />
+                    </View>
+                    <Text style={[styles.innerEmptyText, { color: theme.textMuted }]}>No pending requests</Text>
+                    <Text style={[styles.innerEmptySub, { color: theme.textMuted }]}>Everything is up to date.</Text>
+                  </View>
+                ) : (
+                  requests.slice(0, 3).map((r) => (
+                    <View key={r.id} style={[styles.requestItem, { borderBottomColor: theme.glassBorder }]}>
+                      <View style={styles.requestMain}>
+                        <Text style={[styles.requestRoom, { color: theme.primary }]}>Room {r.roomNumber}</Text>
+                        <Text style={[styles.requestType, { color: theme.textMain }]}>{r.type}</Text>
+                      </View>
                       <Pressable
-                        onPress={() => acceptServiceRequest(r.id, r.type, r.roomNumber)}
-                        style={({ pressed }) => [
-                          styles.acceptBtn,
-                          { backgroundColor: theme.success },
-                          pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-                        ]}
+                        onPress={() => acceptServiceRequest(r.id, "service", r.roomNumber)}
+                        style={[styles.miniBtn, { backgroundColor: theme.success }]}
                       >
-                        <Ionicons name="checkmark" size={16} color="#fff" />
-                        <Text style={styles.acceptText}>Accept</Text>
+                        <Ionicons name="checkmark" size={14} color="#fff" />
                       </Pressable>
                     </View>
-                  </View>
-                ))
-              )}
-
-              {/* Food Orders */}
-              <View style={[styles.modalSectionHeader, { marginTop: 16 }]}>
-                <View style={styles.modalSectionLeft}>
-                  <View style={[styles.sectionIconSmall, { backgroundColor: theme.success }]}>
-                    <Ionicons name="restaurant-outline" size={16} color="#fff" />
-                  </View>
-                  <Text style={[styles.modalSectionTitle, { color: theme.textMain }]}>
-                    Food Orders
-                  </Text>
-                </View>
-                <View style={[styles.modalCountPill, { backgroundColor: theme.glass }]}>
-                  <Text style={[styles.modalCountText, { color: theme.success }]}>
-                    {orders.length}
-                  </Text>
-                </View>
+                  ))
+                )}
               </View>
 
-              {orders.length === 0 ? (
-                <View
-                  style={[
-                    styles.modalEmpty,
-                    { backgroundColor: theme.glass, borderColor: theme.glassBorder },
-                  ]}
-                >
-                  <Ionicons name="fast-food-outline" size={22} color={theme.textMuted} />
-                  <Text style={[styles.modalEmptyText, { color: theme.textMuted }]}>
-                    No food orders
-                  </Text>
-                </View>
-              ) : (
-                orders.map((o) => (
-                  <View
-                    key={o.id}
-                    style={[
-                      styles.modalItem,
-                      { backgroundColor: theme.glass, borderColor: theme.glassBorder },
-                    ]}
-                  >
-                    <View style={styles.modalItemLeft}>
-                      <View style={[styles.roomPill, { backgroundColor: `${theme.success}12` }]}>
-                        <Text style={[styles.roomPillText, { color: theme.success }]}>
-                          Room {o.roomNumber ?? "-"}
-                        </Text>
-                      </View>
-
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.modalItemTitle, { color: theme.textMain }]}>
-                          {o.items || o.item || "Food Order"}
-                        </Text>
-                        <Text style={[styles.modalItemSub, { color: theme.textMuted }]}>
-                          Total: ₹{o.totalAmount || o.totalPrice || 0}
-                          {o.guestName ? ` • ${o.guestName}` : ""}
-                        </Text>
-                      </View>
+              {/* FOOD ORDERS */}
+              <View style={[styles.sectionCard, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
+                <View style={styles.sectionCardHeader}>
+                  <View style={styles.sectionHeaderLeftContent}>
+                    <Text style={[styles.sectionTitle, { color: theme.textMain }]}>Food Orders</Text>
+                    <View style={[styles.badgePill, { backgroundColor: theme.bgMain }]}>
+                      <Text style={[styles.badgePillText, { color: theme.textMuted }]}>{orders.length}</Text>
                     </View>
+                  </View>
+                  <Pressable>
+                    <Text style={[styles.viewAllText, { color: theme.primary }]}>View All</Text>
+                  </Pressable>
+                </View>
 
-                    <View style={styles.modalItemRight}>
+                {orders.length === 0 ? (
+                  <View style={styles.innerEmpty}>
+                    <View style={[styles.innerEmptyIcon, { backgroundColor: theme.bgMain }]}>
+                      <Ionicons name="restaurant-outline" size={32} color={theme.textMuted} />
+                    </View>
+                    <Text style={[styles.innerEmptyText, { color: theme.textMuted }]}>No active orders</Text>
+                    <Text style={[styles.innerEmptySub, { color: theme.textMuted }]}>Waiting for guest orders.</Text>
+                  </View>
+                ) : (
+                  orders.slice(0, 3).map((o) => (
+                    <View key={o.id} style={[styles.requestItem, { borderBottomColor: theme.glassBorder }]}>
+                      <View style={styles.requestMain}>
+                        <Text style={[styles.requestRoom, { color: theme.success }]}>Room {o.roomNumber}</Text>
+                        <Text style={[styles.requestType, { color: theme.textMain }]} numberOfLines={1}>
+                          {o.items || o.dishName || "Food Order"}
+                        </Text>
+                      </View>
                       <Pressable
-                        onPress={() => openTimeModal(o.id, o.item, o.roomNumber)}
-                        style={({ pressed }) => [
-                          styles.acceptBtn,
-                          { backgroundColor: theme.success },
-                          pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-                        ]}
+                        onPress={() => openTimeModal(o.id, o.items || o.dishName, o.roomNumber)}
+                        style={[styles.miniBtn, { backgroundColor: theme.success }]}
                       >
-                        <Ionicons name="checkmark" size={16} color="#fff" />
-                        <Text style={styles.acceptText}>Accept</Text>
+                        <Ionicons name="checkmark" size={14} color="#fff" />
                       </Pressable>
                     </View>
+                  ))
+                )}
+              </View>
+            </View>
+
+            {/* RECENT ACTIVITY TABLE */}
+            <View style={[styles.tableCard, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
+              <View style={styles.tableHeaderSection}>
+                <Text style={[styles.tableTitle, { color: theme.textMain }]}>Recent Activity</Text>
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.table}>
+                  {/* Header Row */}
+                  <View style={[styles.tableRow, styles.tableHeaderRow, { borderBottomColor: theme.glassBorder }]}>
+                    <Text style={[styles.tableCol, styles.colRoomHeader, { color: theme.textMuted }]}>ROOM</Text>
+                    <Text style={[styles.tableCol, styles.colGuestHeader, { color: theme.textMuted }]}>GUEST</Text>
+                    <Text style={[styles.tableCol, styles.colStatusHeader, { color: theme.textMuted }]}>STATUS</Text>
+                    <Text style={[styles.tableCol, styles.colDateHeader, { color: theme.textMuted }]}>CHECK IN</Text>
+                    <Text style={[styles.tableCol, styles.colDateHeader, { color: theme.textMuted }]}>CHECK OUT</Text>
                   </View>
-                ))
-              )}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
-      <Animated.ScrollView
-        style={[styles.container, { backgroundColor: theme.bgMain, opacity: fadeAnim }]}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.backgroundDecor}>
-          <View style={[styles.bgCircle1, { backgroundColor: `${theme.primaryGlow}` }]} />
-          <View style={[styles.bgCircle2, { backgroundColor: `${theme.primaryGlow}` }]} />
-          <View style={[styles.bgCircle3, { backgroundColor: `${theme.primaryGlow}` }]} />
-        </View>
+                  {/* Data Rows */}
+                  {recentActivity.length === 0 ? (
+                    <View style={styles.emptyTable}>
+                      <Text style={{ color: theme.textMuted }}>No recent check-ins</Text>
+                    </View>
+                  ) : (
+                    recentActivity.map((guest) => {
+                      const checkin = guest.checkinAt?.toDate ? guest.checkinAt.toDate() : new Date();
+                      const checkout = guest.checkoutAt?.toDate ? guest.checkoutAt.toDate() : new Date();
 
-        <View style={[styles.header, isWide && styles.headerWide]}>
-          <View>
-            <Text style={[styles.greeting, { color: theme.textMuted }]}>Welcome back</Text>
-            <Text style={[styles.title, { color: theme.textMain }]}>Admin Dashboard</Text>
-          </View>
+                      return (
+                        <View key={guest.id} style={[styles.tableRow, { borderBottomColor: theme.glassBorder }]}>
+                          <View style={styles.colRoomHeader}>
+                            <Text style={[styles.tableRoomText, { color: theme.textMain }]}>{guest.roomNumber || "—"}</Text>
+                          </View>
+                          <View style={[styles.colGuestHeader, styles.guestInfoCell]}>
+                            <View style={[styles.guestAvatar, { backgroundColor: theme.primaryGlow }]}>
+                              <Ionicons name="person" size={14} color={theme.primary} />
+                            </View>
+                            <Text style={[styles.tableGuestText, { color: theme.textMain }]}>{guest.guestName}</Text>
+                          </View>
+                          <View style={styles.colStatusHeader}>
+                            <View style={[styles.statusPill, { backgroundColor: guest.isActive ? `${theme.success}15` : `${theme.textMuted}10` }]}>
+                              <Text style={[styles.statusPillText, { color: guest.isActive ? theme.success : theme.textMuted }]}>
+                                {guest.isActive ? "Checked In" : "Scheduled"}
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={styles.colDateHeader}>
+                            <Text style={[styles.tableDateText, { color: theme.textMain }]}>
+                              {checkin.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </Text>
+                          </View>
+                          <View style={styles.colDateHeader}>
+                            <Text style={[styles.tableDateText, { color: theme.textMain }]}>
+                              {checkout.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+              </ScrollView>
+            </View>
 
-          <View style={styles.headerRight}>
-
-
+            {/* SETUP BUTTON (Less prominent) */}
             <Pressable
-              onPress={() => router.push("/modals/add-guest")}
-              style={({ pressed }) => [
-                styles.addButton,
-                { backgroundColor: theme.primary },
-                pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-              ]}
+              onPress={() => setupRooms(101, 20)}
+              style={{ marginTop: 40, alignSelf: 'center', opacity: 0.2 }}
             >
-              <Ionicons name="add-circle" size={20} color="#fff" />
-              <Text style={styles.addText}>Add Guest</Text>
+              <Text style={{ color: theme.textMuted, fontSize: 10 }}>System Maintenance: Initialize Hotel Rooms</Text>
             </Pressable>
-
-            <Pressable
-              onPress={() => setShowNotifications(true)}
-              style={({ pressed }) => [
-                styles.notification,
-                { backgroundColor: theme.glass, borderColor: theme.glassBorder },
-                pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-              ]}
-            >
-              <Ionicons name="notifications-outline" size={20} color={theme.primary} />
-              {requests.length + orders.length > 0 ? (
-                <View style={[styles.notifBadge, { backgroundColor: theme.danger }]}>
-                  <Text style={styles.notifBadgeText}>{requests.length + orders.length}</Text>
-                </View>
-              ) : null}
-            </Pressable>
-          </View>
+          </Animated.ScrollView>
         </View>
-
-        <Animated.View
-          style={[
-            styles.card,
-            {
-              backgroundColor: theme.bgCard,
-              borderColor: theme.glassBorder,
-              transform: [{ scale: scaleAnim }],
-            },
-          ]}
-        >
-          <View style={styles.cardHeader}>
-            <Text style={[styles.cardTitle, { color: theme.textMain }]}>Room Overview</Text>
-            <View style={[styles.roleBadge, { backgroundColor: `${theme.primary}18` }]}>
-              <Ionicons name="business-outline" size={14} color={theme.primary} />
-              <Text style={[styles.role, { color: theme.primary }]}>HOTEL OPS</Text>
-            </View>
-          </View>
-
-          <View
-            style={[styles.metricsRow, { backgroundColor: theme.glass, borderColor: theme.glassBorder }]}
-          >
-            <View style={styles.metricBox}>
-              <View style={styles.metricHeader}>
-                <View style={[styles.dot, { backgroundColor: theme.primary }]} />
-                <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Active Rooms</Text>
-              </View>
-              <Text style={[styles.metricValue, { color: theme.primary }]}>{activeRooms}</Text>
-              <Text style={[styles.metricSubtext, { color: theme.textMuted }]}>
-                Currently occupied
-              </Text>
-            </View>
-
-            <View style={[styles.metricDivider, { backgroundColor: theme.glassBorder }]} />
-
-            <View style={styles.metricBox}>
-              <View style={styles.metricHeader}>
-                <View style={[styles.dot, { backgroundColor: theme.success }]} />
-                <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Available</Text>
-              </View>
-              <Text style={[styles.metricValue, { color: theme.success }]}>{availableRooms}</Text>
-              <Text style={[styles.metricSubtext, { color: theme.textMuted }]}>Ready to check-in</Text>
-            </View>
-          </View>
-
-          <Pressable
-            onPress={() => setupRooms(101, 20)}
-            style={({ pressed }) => [
-              styles.setupBtn,
-              { backgroundColor: theme.success },
-              pressed && { transform: [{ scale: 0.98 }] },
-            ]}
-          >
-            <Ionicons name="leaf-outline" size={18} color="#fff" />
-            <Text style={styles.setupText}>Initialize Hotel Rooms</Text>
-          </Pressable>
-        </Animated.View>
-
-        {/* SERVICE REQUESTS */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionLeft}>
-            <View style={[styles.sectionIcon, { backgroundColor: theme.primary }]}>
-              <Ionicons name="construct-outline" size={18} color="#fff" />
-            </View>
-            <Text style={[styles.sectionTitle, { color: theme.textMain }]}>Service Requests</Text>
-          </View>
-          <View style={[styles.sectionCount, { backgroundColor: theme.glass }]}>
-            <Text style={[styles.sectionCountText, { color: theme.primary }]}>{requests.length}</Text>
-          </View>
-        </View>
-
-        {requests.length === 0 ? (
-          <View
-            style={[
-              styles.emptyState,
-              { backgroundColor: theme.glass, borderColor: theme.glassBorder },
-            ]}
-          >
-            <Ionicons name="clipboard-outline" size={24} color={theme.textMuted} />
-            <Text style={[styles.emptyText, { color: theme.textMuted }]}>No pending requests</Text>
-          </View>
-        ) : (
-          requests.map((r) => (
-            <View
-              key={r.id}
-              style={[styles.listItem, { backgroundColor: theme.glass, borderColor: theme.glassBorder }]}
-            >
-              <View style={styles.itemLeft}>
-                <View style={[styles.roomPill, { backgroundColor: `${theme.primary}12` }]}>
-                  <Text style={[styles.roomPillText, { color: theme.primary }]}>
-                    Room {r.roomNumber ?? "-"}
-                  </Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.itemTitle, { color: theme.textMain }]}>{r.type ?? "Service"}</Text>
-                  <Text style={[styles.itemSub, { color: theme.textMuted }]}>
-                    {r.guestName ? `Guest: ${r.guestName}` : "Guest: -"}
-                    {r.guestMobile ? ` • ${r.guestMobile}` : ""}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.itemRight}>
-                <Pressable
-                  onPress={() => acceptServiceRequest(r.id, r.type, r.roomNumber)}
-                  style={({ pressed }) => [
-                    styles.acceptBtn,
-                    { backgroundColor: theme.success },
-                    pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-                  ]}
-                >
-                  <Ionicons name="checkmark" size={16} color="#fff" />
-                  <Text style={styles.acceptText}>Accept</Text>
-                </Pressable>
-              </View>
-            </View>
-          ))
-        )}
-
-        {/* FOOD ORDERS */}
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionLeft}>
-            <View style={[styles.sectionIcon, { backgroundColor: theme.success }]}>
-              <Ionicons name="restaurant-outline" size={18} color="#fff" />
-            </View>
-            <Text style={[styles.sectionTitle, { color: theme.textMain }]}>Food Orders</Text>
-          </View>
-          <View style={[styles.sectionCount, { backgroundColor: theme.glass }]}>
-            <Text style={[styles.sectionCountText, { color: theme.success }]}>{orders.length}</Text>
-          </View>
-        </View>
-
-        {orders.length === 0 ? (
-          <View
-            style={[
-              styles.emptyState,
-              { backgroundColor: theme.glass, borderColor: theme.glassBorder },
-            ]}
-          >
-            <Ionicons name="fast-food-outline" size={24} color={theme.textMuted} />
-            <Text style={[styles.emptyText, { color: theme.textMuted }]}>No active orders</Text>
-          </View>
-        ) : (
-          orders.map((o) => (
-            <View
-              key={o.id}
-              style={[styles.listItem, { backgroundColor: theme.glass, borderColor: theme.glassBorder }]}
-            >
-              <View style={styles.itemLeft}>
-                <View style={[styles.roomPill, { backgroundColor: `${theme.success}12` }]}>
-                  <Text style={[styles.roomPillText, { color: theme.success }]}>
-                    Room {o.roomNumber ?? "-"}
-                  </Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.itemTitle, { color: theme.textMain }]}>
-                    {o.items || o.item || "Food Order"}
-                  </Text>
-                  <Text style={[styles.itemSub, { color: theme.textMuted }]}>
-                    Total: ₹{o.totalAmount || o.totalPrice || 0}
-                    {o.guestName ? ` • ${o.guestName}` : ""}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.itemRight}>
-                <Pressable
-                  onPress={() => openTimeModal(o.id, o.item, o.roomNumber)}
-                  style={({ pressed }) => [
-                    styles.acceptBtn,
-                    { backgroundColor: theme.success },
-                    pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-                  ]}
-                >
-                  <Ionicons name="checkmark" size={16} color="#fff" />
-                  <Text style={styles.acceptText}>Accept</Text>
-                </Pressable>
-              </View>
-            </View>
-          ))
-        )}
-      </Animated.ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  mainLayout: { flex: 1, flexDirection: 'row' },
+
+  mainArea: { flex: 1 },
   container: { flex: 1 },
-  content: { padding: 16, paddingBottom: 40 },
+  content: { padding: 16, paddingBottom: 60 },
+  contentWide: { paddingHorizontal: 48, paddingTop: 40 },
 
-  backgroundDecor: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: -1 },
-  bgCircle1: {
-    position: "absolute",
-    top: -140,
-    right: -100,
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    opacity: 0.6,
-  },
-  bgCircle2: {
-    position: "absolute",
-    top: 200,
-    left: -140,
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    opacity: 0.4,
-  },
-  bgCircle3: {
-    position: "absolute",
-    bottom: -60,
-    right: -80,
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    opacity: 0.3,
-  },
-
+  /* Header */
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 24,
-    gap: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 40,
   },
-  headerWide: {
-    maxWidth: 1200,
-    alignSelf: "center",
-    width: "100%",
+  headerLeft: {
+    gap: 4,
   },
   greeting: {
-    fontSize: 13,
-    fontWeight: "700",
-    letterSpacing: 1.5,
-    marginBottom: 6,
-    textTransform: "uppercase",
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.2,
   },
-  title: { fontSize: 28, fontWeight: "900", letterSpacing: -0.5 },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: 12 },
-
-  themeToggle: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
+  title: {
+    fontSize: 32,
+    fontWeight: '900',
+    letterSpacing: -0.8,
   },
-
-  addButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 16,
-    gap: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  addText: { color: "#fff", fontWeight: "900", fontSize: 15 },
-
-  notification: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
-    position: "relative",
-  },
-  notifBadge: {
-    position: "absolute",
-    top: -6,
-    right: -6,
-    borderRadius: 999,
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 6,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#fff",
-  },
-  notifBadgeText: { color: "#fff", fontWeight: "900", fontSize: 10 },
-
-  card: {
-    borderRadius: 28,
-    padding: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    elevation: 10,
-    marginBottom: 28,
-    borderWidth: 1.5,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 20,
-  },
-  cardTitle: { fontSize: 22, fontWeight: "900", letterSpacing: -0.3 },
-  roleBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    gap: 6,
-  },
-  role: { fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },
-
-  metricsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 20,
-    borderWidth: 1.5,
-    marginBottom: 20,
-  },
-  metricBox: { flex: 1 },
-  metricHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-  metricLabel: { fontWeight: "700", fontSize: 13, letterSpacing: 0.5 },
-  metricValue: { marginTop: 10, fontSize: 36, fontWeight: "900", letterSpacing: -1 },
-  metricSubtext: { marginTop: 4, fontSize: 12, fontWeight: "600" },
-  metricDivider: { width: 2, height: 50, marginHorizontal: 16 },
-
-  setupBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 16,
-    borderRadius: 18,
-    gap: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  setupText: { color: "#fff", fontWeight: "900", fontSize: 15 },
-
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 16,
-    marginBottom: 16,
-  },
-  sectionLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
-  sectionIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  sectionIconSmall: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  sectionTitle: { fontSize: 18, fontWeight: "900", letterSpacing: -0.3 },
-  sectionCount: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
-  sectionCountText: { fontWeight: "900", fontSize: 14 },
-
-  emptyState: {
-    padding: 28,
-    borderRadius: 20,
-    alignItems: "center",
-    marginBottom: 16,
-    borderWidth: 1.5,
-  },
-  emptyText: { marginTop: 10, fontWeight: "700", fontSize: 14 },
-
-  listItem: {
-    padding: 18,
-    borderRadius: 20,
-    marginBottom: 14,
-    borderWidth: 1.5,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
   },
-  itemLeft: { flexDirection: "row", alignItems: "center", gap: 14, flex: 1 },
-  roomPill: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
-  roomPillText: { fontWeight: "900", fontSize: 12, letterSpacing: 0.5 },
-  itemTitle: { fontWeight: "900", fontSize: 15 },
-  itemSub: { fontSize: 13, marginTop: 3, fontWeight: "600" },
-  itemRight: { alignItems: "flex-end" },
-
-  acceptBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 14,
-    gap: 6,
-  },
-  acceptText: { color: "#fff", fontWeight: "900", fontSize: 13 },
-
-  timeModalOverlay: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  timeModalCard: {
-    borderRadius: 32,
-    padding: 28,
-    width: "100%",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.3,
-    shadowRadius: 24,
-    elevation: 12,
-    borderWidth: 1.5,
-  },
-  timeModalHeader: { alignItems: "center", marginBottom: 28 },
-  timeModalIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 18,
-  },
-  timeModalTitle: { fontSize: 24, fontWeight: "900", marginBottom: 10, textAlign: "center" },
-  timeModalSubtitle: { fontSize: 15, textAlign: "center", fontWeight: "600", lineHeight: 22 },
-  timeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 14, marginBottom: 28 },
-  timeOption: {
-    flex: 1,
-    minWidth: 90,
-    borderRadius: 20,
-    paddingVertical: 18,
-    paddingHorizontal: 14,
-    alignItems: "center",
-    borderWidth: 2.5,
-  },
-  timeOptionText: { fontSize: 28, fontWeight: "900" },
-  timeOptionLabel: { fontSize: 13, fontWeight: "800", marginTop: 6, letterSpacing: 0.5 },
-  timeModalActions: { flexDirection: "row", gap: 14 },
-  timeCancelBtn: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
-  },
-  timeCancelText: { fontWeight: "900", fontSize: 16 },
-  timeConfirmBtn: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  timeConfirmText: { color: "#FFFFFF", fontWeight: "900", fontSize: 16 },
-
-  modalOverlay: {
-    flex: 1,
-    justifyContent: Platform.OS === "web" ? "center" : "flex-end",
-    alignItems: Platform.OS === "web" ? "center" : "stretch",
-    padding: Platform.OS === "web" ? 20 : 0,
-  },
-  modalCard: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderRadius: Platform.OS === "web" ? 28 : 0,
-    paddingTop: 18,
-    paddingHorizontal: 18,
-    paddingBottom: 22,
-    maxHeight: "85%",
-    borderTopWidth: 1.5,
-    width: Platform.OS === "web" ? "100%" : undefined,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingBottom: 16,
-    borderBottomWidth: 1.5,
-    borderBottomColor: "rgba(255,255,255,0.1)",
-  },
-  modalHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 14 },
-  modalIcon: { width: 44, height: 44, borderRadius: 16, alignItems: "center", justifyContent: "center" },
-  modalTitle: { fontSize: 18, fontWeight: "900", letterSpacing: -0.3 },
-  modalSubtitle: { fontSize: 13, fontWeight: "700", marginTop: 3 },
-  modalClose: {
+  headerToolBtn: {
     width: 44,
     height: 44,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    position: 'relative',
   },
-  modalBody: { marginTop: 16 },
-  modalBodyContent: { paddingBottom: 24 },
-
-  modalSectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
-  modalSectionLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
-  modalSectionTitle: { fontSize: 16, fontWeight: "900", letterSpacing: -0.2 },
-  modalCountPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
-  modalCountText: { fontWeight: "900", fontSize: 13 },
-
-  modalItem: {
-    padding: 16,
-    borderRadius: 18,
-    marginBottom: 12,
-    borderWidth: 1.5,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
+  headerBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#fff',
   },
-  modalItemLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
-  modalItemRight: { alignItems: "flex-end" },
-  modalItemTitle: { fontWeight: "900", fontSize: 14 },
-  modalItemSub: { fontSize: 12, marginTop: 3, fontWeight: "600" },
-
-  modalEmpty: {
-    borderWidth: 1.5,
-    borderRadius: 18,
-    padding: 22,
-    alignItems: "center",
-    marginBottom: 12,
+  headerDivider: {
+    width: 1,
+    height: 24,
+    marginHorizontal: 8,
   },
-  modalEmptyText: { fontWeight: "700", marginTop: 10, fontSize: 13 },
+  desktopAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  desktopAddBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+
+  /* Metrics */
+  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 20, marginBottom: 40 },
+  metricCard: { flex: 1, minWidth: 220, padding: 24, borderRadius: 24, borderWidth: 1, gap: 12 },
+  metricHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  metricDot: { width: 10, height: 10, borderRadius: 5 },
+  metricLabel: { fontWeight: '800', fontSize: 13 },
+  metricValue: { fontSize: 36, fontWeight: '900', letterSpacing: -1 },
+  metricTrend: { fontSize: 12, fontWeight: '700' },
+  metricTrendPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  metricTrendPillText: { fontSize: 11, fontWeight: '900' },
+
+  /* Sections */
+  sectionsRow: { flexDirection: 'column', gap: 24, marginBottom: 40 },
+  sectionsRowWide: { flexDirection: 'row' },
+  sectionCard: { flex: 1, padding: 28, borderRadius: 32, borderWidth: 1 },
+  sectionCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 },
+  sectionHeaderLeftContent: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sectionTitle: { fontSize: 20, fontWeight: '900' },
+  badgePill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
+  badgePillText: { fontWeight: '900', fontSize: 13 },
+  viewAllText: { fontWeight: '800', fontSize: 14 },
+
+  innerEmpty: { paddingVertical: 48, alignItems: 'center', gap: 12 },
+  innerEmptyIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
+  innerEmptyText: { fontSize: 16, fontWeight: '800' },
+  innerEmptySub: { fontSize: 14, fontWeight: '600', opacity: 0.7 },
+
+  requestItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1 },
+  requestMain: { flex: 1, gap: 4 },
+  requestRoom: { fontSize: 12, fontWeight: '800' },
+  requestType: { fontSize: 16, fontWeight: '700' },
+  miniBtn: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+
+  /* Table */
+  tableCard: { padding: 32, borderRadius: 32, borderWidth: 1, marginBottom: 40 },
+  tableHeaderSection: { marginBottom: 32 },
+  tableTitle: { fontSize: 22, fontWeight: '900' },
+  table: { minWidth: 900 },
+  tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 20, borderBottomWidth: 1 },
+  tableHeaderRow: { borderBottomWidth: 1, paddingBottom: 16 },
+  tableCol: { fontWeight: '800', fontSize: 13 },
+  colRoomHeader: { width: 120 },
+  colGuestHeader: { flex: 1 },
+  colStatusHeader: { width: 180 },
+  colDateHeader: { width: 180 },
+
+  guestInfoCell: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  guestAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+
+  tableRoomText: { fontWeight: '900', fontSize: 15 },
+  tableGuestText: { fontWeight: '800', fontSize: 15 },
+  tableDateText: { fontSize: 14, fontWeight: '700' },
+  statusPill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
+  statusPillText: { fontSize: 12, fontWeight: '900' },
+  emptyTable: { paddingVertical: 60, alignItems: 'center' },
+
+  /* Modal */
+  timeModalOverlay: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
+  timeModalCard: { borderRadius: 32, padding: 32, width: "100%", borderWidth: 1, elevation: 20 },
+  timeModalHeader: { alignItems: "center", marginBottom: 32 },
+  timeModalIcon: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", marginBottom: 20 },
+  timeModalTitle: { fontSize: 26, fontWeight: "900", marginBottom: 12, textAlign: "center" },
+  timeModalSubtitle: { fontSize: 16, textAlign: "center", fontWeight: "600" },
+  timeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 16, marginBottom: 32 },
+  timeOption: { flex: 1, minWidth: 100, borderRadius: 20, paddingVertical: 20, alignItems: "center", borderWidth: 2.5 },
+  timeOptionText: { fontSize: 28, fontWeight: "900" },
+  timeOptionLabel: { fontSize: 12, fontWeight: "800", marginTop: 4 },
+  timeModalActions: { flexDirection: "row", gap: 16 },
+  timeCancelBtn: { flex: 1, paddingVertical: 18, borderRadius: 20, alignItems: "center", borderWidth: 1.5 },
+  timeCancelText: { fontWeight: "900", fontSize: 16 },
+  timeConfirmBtn: { flex: 1, paddingVertical: 18, borderRadius: 20, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 },
+  timeConfirmText: { color: "#FFFFFF", fontWeight: "900", fontSize: 16 },
 });

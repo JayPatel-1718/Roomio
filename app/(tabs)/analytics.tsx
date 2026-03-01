@@ -124,7 +124,7 @@ export default function AnalyticsDashboard() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   // ✅ Theme from global context
-  const { theme: activeTheme, mode, setMode } = useTheme();
+  const { theme: activeTheme, colors: theme, setMode } = useTheme();
   const isDark = activeTheme === "dark";
 
   const isSmall = width < 380;
@@ -186,42 +186,7 @@ export default function AnalyticsDashboard() {
   const [iosTempStart, setIosTempStart] = useState<Date>(new Date());
   const [iosTempEnd, setIosTempEnd] = useState<Date>(new Date());
 
-  // ✅ Dynamic theme object
-  const theme = isDark
-    ? {
-      bgMain: "#010409",
-      bgCard: "rgba(13, 17, 23, 0.6)",
-      bgNav: "rgba(1, 4, 9, 0.8)",
-      textMain: "#f0f6fc",
-      textMuted: "#8b949e",
-      glass: "rgba(255, 255, 255, 0.03)",
-      glassBorder: "rgba(255, 255, 255, 0.1)",
-      shadow: "rgba(0, 0, 0, 0.6)",
-      primary: "#2563eb",
-      primaryHover: "#1d4ed8",
-      primaryGlow: "rgba(37, 99, 235, 0.35)",
-      accent: "#38bdf8",
-      success: "#22c55e",
-      warning: "#f59e0b",
-      danger: "#ef4444",
-    }
-    : {
-      bgMain: "#f8fafc",
-      bgCard: "#ffffff",
-      bgNav: "rgba(248, 250, 252, 0.9)",
-      textMain: "#0f172a",
-      textMuted: "#64748b",
-      glass: "rgba(37, 99, 235, 0.04)",
-      glassBorder: "rgba(37, 99, 235, 0.12)",
-      shadow: "rgba(37, 99, 235, 0.15)",
-      primary: "#2563eb",
-      primaryHover: "#1d4ed8",
-      primaryGlow: "rgba(37, 99, 235, 0.25)",
-      accent: "#0ea5e9",
-      success: "#16a34a",
-      warning: "#f59e0b",
-      danger: "#dc2626",
-    };
+
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -690,7 +655,7 @@ export default function AnalyticsDashboard() {
       // 1️⃣ Load all rooms
       const roomsRef = collection(db, "users", uid, "rooms");
       const roomsSnap = await getDocs(roomsRef);
-      const allRooms = roomsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const allRooms = roomsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
 
       // 2️⃣ Load food orders for date range
       const foodOrdersRef = collection(db, "foodOrders");
@@ -701,7 +666,7 @@ export default function AnalyticsDashboard() {
         where("createdAt", "<=", endTimestamp)
       );
       const foodOrdersSnap = await getDocs(foodOrdersQuery);
-      const foodOrders = foodOrdersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const foodOrders = foodOrdersSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
 
       // 3️⃣ Load service requests for date range
       const serviceRequestsRef = collection(db, "serviceRequests");
@@ -712,14 +677,14 @@ export default function AnalyticsDashboard() {
         where("createdAt", "<=", endTimestamp)
       );
       const serviceRequestsSnap = await getDocs(serviceRequestsQuery);
-      const serviceRequests = serviceRequestsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const serviceRequests = serviceRequestsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
 
       console.log(`Found ${allRooms.length} rooms, ${foodOrders.length} food orders, ${serviceRequests.length} service requests`);
 
       // 4️⃣ Prepare export data for each room
       const exportData: RoomExportData[] = [];
 
-      for (const room of allRooms) {
+      for (const room of allRooms as any[]) {
         // Filter orders for this room
         const roomFoodOrders = foodOrders.filter((o: any) => String(o.roomNumber) === String(room.roomNumber));
         const roomServiceRequests = serviceRequests.filter((r: any) => String(r.roomNumber) === String(room.roomNumber));
@@ -781,9 +746,9 @@ export default function AnalyticsDashboard() {
         Alert.alert("Success", `CSV file downloaded as ${fileName}`);
       } else {
         // Mobile save
-        const fileUri = FileSystem.documentDirectory + fileName;
+        const fileUri = (FileSystem as any).documentDirectory + fileName;
         await FileSystem.writeAsStringAsync(fileUri, csvContent, {
-          encoding: FileSystem.EncodingType.UTF8,
+          encoding: (FileSystem as any).EncodingType.UTF8,
         });
 
         // Share the file

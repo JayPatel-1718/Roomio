@@ -161,7 +161,8 @@ export default function RoomsScreen() {
   const auth = getAuth();
   const user = auth.currentUser;
   const router = useRouter();
-  const { theme: currentTheme, mode, setMode } = useTheme();
+  const { theme: currentTheme, colors: theme, setMode } = useTheme();
+  const styles = useMemo(() => getStyles(theme), [theme]);
   const isDark = currentTheme === "dark";
   const [occupiedRooms, setOccupiedRooms] = useState<Room[]>([]);
   const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
@@ -221,33 +222,7 @@ export default function RoomsScreen() {
     occupiedRoomsRef.current = occupiedRooms;
   }, [occupiedRooms]);
 
-  const colors = isDark
-    ? {
-      bgMain: "#010409",
-      bgCard: "rgba(13, 17, 23, 0.6)",
-      textMain: "#f0f6fc",
-      textMuted: "#8b949e",
-      glass: "rgba(255, 255, 255, 0.03)",
-      glassBorder: "rgba(255, 255, 255, 0.1)",
-      shadow: "rgba(0, 0, 0, 0.6)",
-      primary: "#2563eb",
-      success: "#22c55e",
-      warning: "#f59e0b",
-      danger: "#ef4444",
-    }
-    : {
-      bgMain: "#f8fafc",
-      bgCard: "#ffffff",
-      textMain: "#0f172a",
-      textMuted: "#64748b",
-      glass: "rgba(37, 99, 235, 0.04)",
-      glassBorder: "rgba(37, 99, 235, 0.12)",
-      shadow: "rgba(37, 99, 235, 0.15)",
-      primary: "#2563eb",
-      success: "#16a34a",
-      warning: "#f59e0b",
-      danger: "#dc2626",
-    };
+
 
   // ---------- Date helpers ----------
   const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -345,7 +320,7 @@ opacity: 1;
 }
 `;
     document.head.appendChild(style);
-    return () => document.head.removeChild(style);
+    return () => { document.head.removeChild(style); };
   }, []);
   // ✅ Web-safe confirm
   const askConfirm = (cfg: Omit<ConfirmState, "open">) => {
@@ -618,7 +593,7 @@ Check permissions for /serviceRequests.`
 
   // ✅ GENERATE BILL DATA
   const generateBillData = (room: Room, customRate?: number): BillData => {
-    const guestId = room.guestId || null;
+    const guestId = room.guestId || undefined;
     const roomAssignedAt = room.assignedAt;
     const foodOrdersList = getCurrentGuestFoodOrders(room.roomNumber, guestId, roomAssignedAt);
     const serviceRequestsList = getServiceRequestsForRoom(room.roomNumber, roomAssignedAt);
@@ -1017,7 +992,7 @@ Check permissions for /serviceRequests.`
       } else {
         // If sharing not available, save to downloads
         const fileName = `Invoice_${billData.invoiceNumber}.pdf`;
-        const fileUri = FileSystem.documentDirectory + fileName;
+        const fileUri = (FileSystem as any).documentDirectory + fileName;
         await FileSystem.copyAsync({
           from: uri,
           to: fileUri
@@ -1320,7 +1295,7 @@ This action CANNOT be undone.`,
     if (!user) return;
     const uid = user.uid;
     const room = occupiedRooms.find((r) => r.id === roomId);
-    const guestId = room?.guestId || null;
+    const guestId = room?.guestId || undefined;
     const roomAssignedAt = room?.assignedAt;
 
     // Calculate all totals with the final room rate
@@ -1576,7 +1551,7 @@ This action CANNOT be undone.`,
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.loadingContainer}>
-          <Ionicons name="bed" size={48} color="#2563EB" />
+          <Ionicons name="bed" size={48} color={theme.primary} />
           <Text style={styles.loadingText}>Loading Rooms...</Text>
         </View>
       </SafeAreaView>
@@ -1589,7 +1564,7 @@ This action CANNOT be undone.`,
   const webEditCheckoutValue = checkoutDate ? formatDateTimeLocal(checkoutDate) : "";
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bgMain }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bgMain }]}>
       {/* CONFIRM MODAL */}
       <Modal visible={confirm.open} transparent animationType="fade" onRequestClose={closeConfirm}>
         <View style={styles.confirmOverlay}>
@@ -1601,7 +1576,7 @@ This action CANNOT be undone.`,
                 <Ionicons
                   name={confirm.variant === "destructive" ? "warning-outline" : "help-circle-outline"}
                   size={20}
-                  color={confirm.variant === "destructive" ? "#DC2626" : "#2563EB"}
+                  color={confirm.variant === "destructive" ? theme.danger : theme.primary}
                 />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
@@ -1662,7 +1637,7 @@ This action CANNOT be undone.`,
             <View style={styles.modalHeader}>
               <View style={styles.modalHeaderLeft}>
                 <View style={[styles.modalIcon, { backgroundColor: "rgba(37, 99, 235, 0.1)" }]}>
-                  <Ionicons name="receipt-outline" size={18} color="#2563EB" />
+                  <Ionicons name="receipt-outline" size={18} color={theme.primary} />
                 </View>
                 <View>
                   <Text style={styles.modalTitle}>Guest Bill</Text>
@@ -1681,10 +1656,10 @@ This action CANNOT be undone.`,
                   ]}
                 >
                   {generatingPDF ? (
-                    <ActivityIndicator size="small" color="#2563EB" />
+                    <ActivityIndicator size="small" color={theme.primary} />
                   ) : (
                     <>
-                      <Ionicons name="document-text-outline" size={18} color="#2563EB" />
+                      <Ionicons name="cloud-download-outline" size={18} color={theme.primary} />
                       <Text style={styles.pdfBtnText}>PDF</Text>
                     </>
                   )}
@@ -1693,7 +1668,7 @@ This action CANNOT be undone.`,
                   onPress={closeBillModal}
                   style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
                 >
-                  <Ionicons name="close" size={18} color="#6B7280" />
+                  <Ionicons name="close" size={18} color={theme.textMuted} />
                 </Pressable>
               </View>
             </View>
@@ -1745,7 +1720,7 @@ This action CANNOT be undone.`,
                         onChangeText={updateBillWithRate}
                         keyboardType="numeric"
                         placeholder="Enter rate"
-                        placeholderTextColor="#9CA3AF"
+                        placeholderTextColor={theme.textMuted}
                       />
                     </View>
                   </View>
@@ -1851,7 +1826,10 @@ This action CANNOT be undone.`,
 
       {/* LOGS MODAL */}
       <Modal visible={logsOpen} animationType="slide" transparent onRequestClose={() => setLogsOpen(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View style={styles.modalHeaderLeft}>
@@ -1859,7 +1837,7 @@ This action CANNOT be undone.`,
                   <Ionicons
                     name={logsType === "food" ? "restaurant-outline" : "construct-outline"}
                     size={18}
-                    color="#2563EB"
+                    color={theme.primary}
                   />
                 </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
@@ -1889,7 +1867,7 @@ This action CANNOT be undone.`,
                     <Ionicons
                       name="trash-bin"
                       size={16}
-                      color={deleting || filteredFoodOrders.length === 0 ? "#9CA3AF" : "#DC2626"}
+                      color={deleting || filteredFoodOrders.length === 0 ? theme.textMuted : theme.danger}
                     />
                     <Text
                       style={[
@@ -1929,7 +1907,7 @@ This action CANNOT be undone.`,
                   onPress={() => setLogsOpen(false)}
                   style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
                 >
-                  <Ionicons name="close" size={18} color="#6B7280" />
+                  <Ionicons name="close" size={18} color={theme.textMuted} />
                 </Pressable>
               </View>
             </View>
@@ -1999,7 +1977,7 @@ This action CANNOT be undone.`,
                     onPress={() => deleteFoodOrder(selectedOrder.id)}
                     style={({ pressed }) => [styles.detailDeleteBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
                   >
-                    <Ionicons name="trash-bin" size={14} color="#DC2626" />
+                    <Ionicons name="trash-bin" size={14} color={theme.danger} />
                     <Text style={styles.detailDeleteText}>Delete</Text>
                   </Pressable>
                 </View>
@@ -2071,7 +2049,7 @@ This action CANNOT be undone.`,
                     onPress={() => deleteServiceRequest(selectedRequest.id)}
                     style={({ pressed }) => [styles.detailDeleteBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
                   >
-                    <Ionicons name="trash-bin" size={14} color="#DC2626" />
+                    <Ionicons name="trash-bin" size={14} color={theme.danger} />
                     <Text style={styles.detailDeleteText}>Delete</Text>
                   </Pressable>
                 </View>
@@ -2110,7 +2088,7 @@ This action CANNOT be undone.`,
               {logsType === "food" ? (
                 filteredFoodOrders.length === 0 ? (
                   <View style={styles.modalEmpty}>
-                    <Ionicons name="fast-food-outline" size={24} color="#9CA3AF" />
+                    <Ionicons name="fast-food-outline" size={24} color={theme.textMuted} />
                     <Text style={styles.modalEmptyText}>
                       No food orders{logsRoomNumber != null ? ` for Room ${logsRoomNumber}` : ""}
                     </Text>
@@ -2156,16 +2134,16 @@ This action CANNOT be undone.`,
                           onPress={() => deleteFoodOrder(o.id)}
                           style={({ pressed }) => [styles.requestDeleteBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
                         >
-                          <Ionicons name="trash-bin" size={16} color="#DC2626" />
+                          <Ionicons name="trash-bin" size={16} color={theme.danger} />
                         </Pressable>
-                        <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                        <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
                       </View>
                     </Pressable>
                   ))
                 )
               ) : filteredServiceRequests.length === 0 ? (
                 <View style={styles.modalEmpty}>
-                  <Ionicons name="construct-outline" size={24} color="#9CA3AF" />
+                  <Ionicons name="construct-outline" size={24} color={theme.textMuted} />
                   <Text style={styles.modalEmptyText}>
                     No service requests{logsRoomNumber != null ? ` for Room ${logsRoomNumber}` : ""}
                   </Text>
@@ -2214,16 +2192,16 @@ This action CANNOT be undone.`,
                         onPress={() => deleteServiceRequest(r.id)}
                         style={({ pressed }) => [styles.requestDeleteBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
                       >
-                        <Ionicons name="trash-bin" size={16} color="#DC2626" />
+                        <Ionicons name="trash-bin" size={16} color={theme.danger} />
                       </Pressable>
-                      <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                      <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
                     </View>
                   </Pressable>
                 ))
               )}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* EDIT ROOM MODAL */}
@@ -2257,7 +2235,7 @@ This action CANNOT be undone.`,
                   <Ionicons name="person-outline" size={18} color="#9CA3AF" style={{ marginLeft: 12 }} />
                   <TextInput
                     placeholder="Enter guest name"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={theme.textMuted}
                     style={styles.input}
                     value={guestName}
                     onChangeText={setGuestName}
@@ -2270,7 +2248,7 @@ This action CANNOT be undone.`,
                   <Ionicons name="call-outline" size={18} color="#9CA3AF" style={{ marginLeft: 12 }} />
                   <TextInput
                     placeholder="10-digit mobile number"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={theme.textMuted}
                     keyboardType="number-pad"
                     maxLength={10}
                     style={styles.input}
@@ -2289,7 +2267,7 @@ This action CANNOT be undone.`,
                   <Text style={[styles.currencySymbol, { marginLeft: 12 }]}>₹</Text>
                   <TextInput
                     placeholder="1500"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={theme.textMuted}
                     keyboardType="numeric"
                     style={styles.input}
                     value={roomRate}
@@ -2317,6 +2295,7 @@ This action CANNOT be undone.`,
                           if (checkoutDate && d >= checkoutDate) {
                             const next = new Date(d);
                             next.setDate(next.getDate() + 1);
+                            next.setHours(11, 0, 0, 0);
                             setCheckoutDate(next);
                           }
                         }
@@ -2337,6 +2316,7 @@ This action CANNOT be undone.`,
                             if (checkoutDate && d >= checkoutDate) {
                               const next = new Date(d);
                               next.setDate(next.getDate() + 1);
+                              next.setHours(11, 0, 0, 0);
                               setCheckoutDate(next);
                             }
                           },
@@ -2526,7 +2506,7 @@ This action CANNOT be undone.`,
       </Modal>
 
       {/* MAIN SCREEN */}
-      <ScrollView style={[styles.container, { backgroundColor: colors.bgMain }]} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView style={[styles.container, { backgroundColor: theme.bgMain }]} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.backgroundDecor}>
           <View style={styles.bgCircle1} />
           <View style={styles.bgCircle2} />
@@ -2534,28 +2514,28 @@ This action CANNOT be undone.`,
         </View>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Text style={[styles.greeting, { color: colors.textMuted }]} numberOfLines={1}>
+            <Text style={[styles.greeting, { color: theme.textMuted }]} numberOfLines={1}>
               Hotel Rooms
             </Text>
-            <Text style={[styles.title, { color: colors.textMain }]} numberOfLines={1}>
+            <Text style={[styles.title, { color: theme.textMain }]} numberOfLines={1}>
               Room Management
             </Text>
           </View>
           <View style={styles.headerRight}>
 
             <View style={[styles.roleBadge, { backgroundColor: isDark ? 'rgba(37, 99, 235, 0.18)' : 'rgba(37, 99, 235, 0.1)' }]}>
-              <Ionicons name="business-outline" size={14} color={colors.primary} />
-              <Text style={[styles.role, { color: colors.primary }]}>ROOMS</Text>
+              <Ionicons name="business-outline" size={14} color={theme.primary} />
+              <Text style={[styles.role, { color: theme.primary }]}>ROOMS</Text>
             </View>
           </View>
         </View>
         {/* SEARCH BAR */}
-        <View style={[styles.searchContainer, { backgroundColor: colors.bgCard, borderColor: colors.glassBorder }]}>
-          <Ionicons name="search" size={20} color={colors.textMuted} />
+        <View style={[styles.searchContainer, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
+          <Ionicons name="search" size={20} color={theme.textMuted} />
           <TextInput
             placeholder="Search rooms (e.g. 102)"
-            placeholderTextColor={colors.textMuted}
-            style={[styles.searchInput, { color: colors.textMain }]}
+            placeholderTextColor={theme.textMuted}
+            style={[styles.searchInput, { color: theme.textMain }]}
             value={searchQuery}
             onChangeText={setSearchQuery}
             keyboardType="number-pad"
@@ -2570,7 +2550,7 @@ This action CANNOT be undone.`,
         <View style={styles.globalLogsContainer}>
           <Pressable
             onPress={() => openLogs(null, "food")}
-            style={({ pressed }) => [styles.globalLogsBtn, { backgroundColor: colors.bgCard, borderColor: colors.glassBorder }, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
+            style={({ pressed }) => [styles.globalLogsBtn, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
           >
             <Ionicons name="restaurant-outline" size={18} color="#2563EB" />
             <Text style={styles.globalLogsText}>All Food Orders ({foodOrders.length})</Text>
@@ -2582,7 +2562,7 @@ This action CANNOT be undone.`,
           </Pressable>
           <Pressable
             onPress={() => openLogs(null, "services")}
-            style={({ pressed }) => [styles.globalLogsBtn, { backgroundColor: colors.bgCard, borderColor: colors.glassBorder }, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
+            style={({ pressed }) => [styles.globalLogsBtn, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
           >
             <Ionicons name="construct-outline" size={18} color="#F59E0B" />
             <Text style={styles.globalLogsText}>All Service Requests ({serviceRequests.length})</Text>
@@ -2595,22 +2575,22 @@ This action CANNOT be undone.`,
         </View>
         {/* FLOOR-WISE DISPLAY */}
         {floors.length === 0 ? (
-          <View style={[styles.emptyState, { backgroundColor: colors.bgCard, borderColor: colors.glassBorder }]}>
-            <Ionicons name="bed-outline" size={24} color={colors.textMuted} />
-            <Text style={[styles.emptyText, { color: colors.textMuted }]}>No rooms found</Text>
+          <View style={[styles.emptyState, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
+            <Ionicons name="bed-outline" size={24} color={theme.textMuted} />
+            <Text style={[styles.emptyText, { color: theme.textMuted }]}>No rooms found</Text>
           </View>
         ) : (
           floors.map(([floor, { occupied, available }]) => {
             const isOpen = openFloors[floor] ?? false;
             const totalRooms = occupied.length + available.length;
             return (
-              <View key={floor} style={[styles.floorCard, { backgroundColor: colors.bgCard, borderColor: colors.glassBorder }]}>
+              <View key={floor} style={[styles.floorCard, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
                 <Pressable
                   onPress={() => setOpenFloors((p) => ({ ...p, [floor]: !isOpen }))}
                   style={({ pressed }) => [styles.floorHeader, pressed && { opacity: 0.95 }]}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.floorTitle, { color: colors.textMain }]}>{floorLabel(floor)}</Text>
+                    <Text style={[styles.floorTitle, { color: theme.textMain }]}>{floorLabel(floor)}</Text>
                     <Text style={styles.floorSub}>
                       Total: {totalRooms} • Occupied: {occupied.length} • Available: {available.length}
                     </Text>
@@ -2622,7 +2602,7 @@ This action CANNOT be undone.`,
                     {/* Occupied Rooms */}
                     {occupied.length > 0 && (
                       <>
-                        <Text style={[styles.sectionTitle, { color: colors.primary }]}>Occupied</Text>
+                        <Text style={[styles.sectionTitle, { color: theme.primary }]}>Occupied</Text>
                         {occupied.map((room) => {
                           const roomFoodCount = foodCountForRoom(
                             room.roomNumber,
@@ -2819,21 +2799,21 @@ This action CANNOT be undone.`,
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F9FAFB" },
-  container: { flex: 1, backgroundColor: "#F9FAFB" },
+const getStyles = (theme: any) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bgMain },
+  container: { flex: 1, backgroundColor: theme.bgMain },
   content: { padding: 16 },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#F9FAFB",
+    backgroundColor: theme.bgMain,
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
     fontWeight: "600",
-    color: "#6B7280",
+    color: theme.textMuted,
   },
   backgroundDecor: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
   bgCircle1: {
@@ -2886,17 +2866,17 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   greeting: {
-    color: "#6B7280",
+    color: theme.textMuted,
     fontSize: 12,
     fontWeight: "600",
     letterSpacing: 1,
     marginBottom: 4,
   },
-  title: { fontSize: 22, fontWeight: "700", color: "#111827" },
+  title: { fontSize: 22, fontWeight: "700", color: theme.textMain },
   roleBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(37, 99, 235, 0.1)",
+    backgroundColor: theme.primaryGlow || "rgba(37, 99, 235, 0.1)",
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 16,
@@ -2904,7 +2884,7 @@ const styles = StyleSheet.create({
   },
   role: {
     fontSize: 11,
-    color: "#2563EB",
+    color: theme.primary,
     fontWeight: "700",
     letterSpacing: 1.2,
   },
@@ -2918,23 +2898,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.bgCard,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 10,
     gap: 8,
-    shadowColor: "#000",
+    shadowColor: theme.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.1,
     shadowRadius: 6,
     elevation: 2,
   },
   globalLogsText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#111827",
+    color: theme.textMain,
   },
   globalLogsBadge: {
     position: "absolute",
@@ -2943,12 +2923,12 @@ const styles = StyleSheet.create({
     minWidth: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: "#2563EB",
+    backgroundColor: theme.primary,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 6,
     borderWidth: 2,
-    borderColor: "#F9FAFB",
+    borderColor: theme.bgMain,
   },
   globalLogsBadgeText: {
     color: "#FFFFFF",
@@ -2956,15 +2936,15 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   floorCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.bgCard,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
     marginBottom: 12,
     overflow: "hidden",
-    shadowColor: "#000",
+    shadowColor: theme.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
   },
@@ -2973,17 +2953,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    backgroundColor: "#F9FAFB",
+    backgroundColor: theme.bgMain,
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: theme.glassBorder,
   },
-  floorTitle: { fontSize: 16, fontWeight: "900", color: "#111827" },
-  floorSub: { marginTop: 3, fontSize: 12, fontWeight: "700", color: "#6B7280" },
+  floorTitle: { fontSize: 16, fontWeight: "900", color: theme.textMain },
+  floorSub: { marginTop: 3, fontSize: 12, fontWeight: "700", color: theme.textMuted },
   floorBody: { padding: 14 },
   sectionTitle: {
     fontSize: 12,
     fontWeight: "900",
-    color: "#6B7280",
+    color: theme.textMuted,
     letterSpacing: 1,
     textTransform: "uppercase",
     marginBottom: 10,
@@ -2991,14 +2971,14 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.bgCard,
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    shadowColor: "#000",
+    borderColor: theme.glassBorder,
+    shadowColor: theme.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 6,
@@ -3008,28 +2988,28 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 15,
-    color: "#111827",
+    color: theme.textMain,
     padding: 0,
   },
   emptyState: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.bgCard,
     padding: 18,
     borderRadius: 16,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
   },
   emptyText: { color: "#9CA3AF", marginTop: 6, fontWeight: "700" },
   occupiedCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.bgCard,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    shadowColor: "#000",
+    borderColor: theme.glassBorder,
+    shadowColor: theme.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 2,
   },
@@ -3047,15 +3027,15 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  roomNumber: { fontSize: 16, fontWeight: "700", color: "#111827", flexShrink: 1 },
+  roomNumber: { fontSize: 16, fontWeight: "700", color: theme.textMain, flexShrink: 1 },
   roomLogsButtons: { flexDirection: "row", gap: 6, marginLeft: 4 },
   roomLogsInlineBtn: {
     width: 34,
     height: 30,
     borderRadius: 10,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.bgCard,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
@@ -3067,12 +3047,12 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: "#2563EB",
+    backgroundColor: theme.primary,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 4,
     borderWidth: 2,
-    borderColor: "#FFFFFF",
+    borderColor: theme.bgCard,
   },
   roomLogsBadgeText: { color: "#FFFFFF", fontWeight: "900", fontSize: 9 },
   statusBadge: {
@@ -3097,7 +3077,7 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 14,
-    color: "#374151",
+    color: theme.textMain,
     marginLeft: 8,
     flexShrink: 1,
   },
@@ -3141,12 +3121,12 @@ const styles = StyleSheet.create({
   },
   availableCard: {
     width: "48%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.bgCard,
     borderRadius: 16,
     padding: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
     alignItems: "center",
   },
   availableIcon: {
@@ -3161,7 +3141,7 @@ const styles = StyleSheet.create({
   availableRoomNumber: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#111827",
+    color: theme.textMain,
     marginBottom: 6,
   },
   availableBadge: {
@@ -3185,10 +3165,10 @@ const styles = StyleSheet.create({
     alignItems: Platform.OS === "web" ? "center" : "stretch",
   },
   modalCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.bgCard,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
     overflow: "hidden",
     maxHeight: "85%",
     width: Platform.OS === "web" ? "100%" : undefined,
@@ -3200,8 +3180,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
-    backgroundColor: "#F9FAFB",
+    borderBottomColor: theme.glassBorder,
+    backgroundColor: theme.bgMain,
   },
   modalHeaderLeft: {
     flexDirection: "row",
@@ -3215,15 +3195,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  themeToggle: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 4,
-  },
+
   modalIcon: {
     width: 36,
     height: 36,
@@ -3232,8 +3204,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  modalTitle: { fontSize: 16, fontWeight: "900", color: "#111827" },
-  modalSubtitle: { fontSize: 12, color: "#6B7280", marginTop: 2 },
+  modalTitle: { fontSize: 16, fontWeight: "900", color: theme.textMain },
+  modalSubtitle: { fontSize: 12, color: theme.textMuted, marginTop: 2 },
   pdfBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -3281,8 +3253,8 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#FFFFFF",
+    borderColor: theme.glassBorder,
+    backgroundColor: theme.bgCard,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -3299,16 +3271,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: theme.glass,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
   },
   filterPillActive: {
-    backgroundColor: "rgba(37, 99, 235, 0.10)",
-    borderColor: "rgba(37, 99, 235, 0.22)",
+    backgroundColor: theme.primaryGlow || "rgba(37, 99, 235, 0.10)",
+    borderColor: theme.primary || "rgba(37, 99, 235, 0.22)",
   },
-  filterPillText: { fontSize: 12, fontWeight: "800", color: "#6B7280" },
-  filterPillTextActive: { color: "#2563EB" },
+  filterPillText: { fontSize: 12, fontWeight: "800", color: theme.textMuted },
+  filterPillTextActive: { color: theme.primary },
   tabContainer: { flexDirection: "row", gap: 8, marginLeft: "auto", marginRight: 10 },
   tabButton: {
     paddingHorizontal: 12,
@@ -3331,8 +3303,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "rgba(37, 99, 235, 0.18)",
-    backgroundColor: "rgba(37, 99, 235, 0.06)",
+    borderColor: theme.glassBorder,
+    backgroundColor: theme.glass,
   },
   detailTopRow: {
     flexDirection: "row",
@@ -3346,21 +3318,21 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   detailRoomPill: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.bgCard,
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
   },
-  detailRoomPillText: { fontWeight: "900", color: "#111827", fontSize: 12 },
+  detailRoomPillText: { fontWeight: "900", color: theme.textMain, fontSize: 12 },
   detailStatusPill: {
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   detailStatusText: { fontWeight: "900", fontSize: 12 },
-  detailTitle: { fontSize: 16, fontWeight: "900", color: "#111827" },
+  detailTitle: { fontSize: 16, fontWeight: "900", color: theme.textMain },
   detailDeleteBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -3375,9 +3347,9 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 12,
   },
-  detailLine: { marginTop: 6, fontSize: 13, color: "#374151", fontWeight: "700" },
-  detailTime: { marginTop: 8, fontSize: 12, color: "#2563EB", fontWeight: "900" },
-  detailMeta: { marginTop: 4, fontSize: 12, color: "#6B7280", fontWeight: "700" },
+  detailLine: { marginTop: 6, fontSize: 13, color: theme.textMain, fontWeight: "700" },
+  detailTime: { marginTop: 8, fontSize: 12, color: theme.primary, fontWeight: "900" },
+  detailMeta: { marginTop: 4, fontSize: 12, color: theme.textMuted, fontWeight: "700" },
   chargeRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -3385,23 +3357,23 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingVertical: 6,
     paddingHorizontal: 10,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.bgCard,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
   },
-  chargeLabel: { fontSize: 14, fontWeight: "800", color: "#111827" },
-  chargeAmount: { fontSize: 16, fontWeight: "900", color: "#2563EB" },
+  chargeLabel: { fontSize: 14, fontWeight: "800", color: theme.textMain },
+  chargeAmount: { fontSize: 16, fontWeight: "900", color: theme.primary },
   notesBox: {
     marginTop: 10,
     padding: 10,
-    backgroundColor: "#F9FAFB",
+    backgroundColor: theme.glass,
     borderRadius: 8,
     borderLeftWidth: 3,
-    borderLeftColor: "#F59E0B",
+    borderLeftColor: theme.warning,
   },
-  notesLabel: { fontSize: 12, fontWeight: "900", color: "#F59E0B", marginBottom: 4 },
-  notesText: { fontSize: 13, color: "#6B7280", fontWeight: "700" },
+  notesLabel: { fontSize: 12, fontWeight: "900", color: theme.warning, marginBottom: 4 },
+  notesText: { fontSize: 13, color: theme.textMuted, fontWeight: "700" },
   itemRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -3409,9 +3381,9 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 6,
   },
-  itemLeft: { flex: 1, color: "#111827", fontWeight: "800", fontSize: 12 },
-  itemRight: { color: "#2563EB", fontWeight: "900", fontSize: 12 },
-  noItemsText: { marginTop: 6, color: "#6B7280", fontWeight: "700", fontSize: 12 },
+  itemLeft: { flex: 1, color: theme.textMain, fontWeight: "800", fontSize: 12 },
+  itemRight: { color: theme.primary, fontWeight: "900", fontSize: 12 },
+  noItemsText: { marginTop: 6, color: theme.textMuted, fontWeight: "700", fontSize: 12 },
   completeBtn: {
     marginTop: 12,
     backgroundColor: "#16A34A",
@@ -3426,14 +3398,14 @@ const styles = StyleSheet.create({
   modalList: { paddingHorizontal: 14, paddingTop: 6 },
   modalEmpty: {
     marginTop: 14,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.bgCard,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
     borderRadius: 16,
     padding: 16,
     alignItems: "center",
   },
-  modalEmptyText: { marginTop: 8, color: "#9CA3AF", fontWeight: "700" },
+  modalEmptyText: { marginTop: 8, color: theme.textMuted, fontWeight: "700" },
   requestRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -3442,8 +3414,8 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#FFFFFF",
+    borderColor: theme.glassBorder,
+    backgroundColor: theme.bgCard,
     marginBottom: 10,
   },
   requestRowActive: {
@@ -3452,22 +3424,22 @@ const styles = StyleSheet.create({
   },
   requestLeft: { flexDirection: "row", gap: 10, alignItems: "center", flex: 1 },
   requestRoomPill: {
-    backgroundColor: "#F3F4F6",
+    backgroundColor: theme.glass,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 12,
   },
-  requestRoomPillText: { color: "#111827", fontWeight: "900", fontSize: 12 },
+  requestRoomPillText: { color: theme.textMain, fontWeight: "900", fontSize: 12 },
   requestTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 4,
   },
-  requestTitle: { color: "#111827", fontWeight: "900", fontSize: 13 },
+  requestTitle: { color: theme.textMain, fontWeight: "900", fontSize: 13 },
   requestStatus: { fontSize: 10, fontWeight: "900", letterSpacing: 1 },
-  requestSub: { color: "#6B7280", fontSize: 12, marginTop: 3, fontWeight: "700" },
-  requestTime: { color: "#2563EB", fontSize: 11, marginTop: 4, fontWeight: "900" },
+  requestSub: { color: theme.textMuted, fontSize: 12, marginTop: 3, fontWeight: "700" },
+  requestTime: { color: theme.primary, fontSize: 11, marginTop: 4, fontWeight: "900" },
   requestRightActions: {
     flexDirection: "row",
     alignItems: "center",
@@ -3483,33 +3455,33 @@ const styles = StyleSheet.create({
   },
   // EDIT MODAL FIELDS
   inputGroup: { marginBottom: 16 },
-  label: { fontSize: 13, fontWeight: "700", color: "#374151", marginBottom: 8 },
+  label: { fontSize: 13, fontWeight: "700", color: theme.textMain, marginBottom: 8 },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F9FAFB",
+    backgroundColor: theme.glass,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
     height: 48,
   },
   input: {
     flex: 1,
     fontSize: 15,
-    color: "#111827",
+    color: theme.textMain,
     paddingHorizontal: 12,
     height: "100%",
   },
   currencySymbol: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#111827",
+    color: theme.textMain,
     marginRight: 4,
   },
   dateValueText: {
     flex: 1,
     fontSize: 15,
-    color: "#111827",
+    color: theme.textMain,
     fontWeight: "700",
     paddingHorizontal: 12,
   },
@@ -3546,7 +3518,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(17, 24, 39, 0.35)",
   },
   pickerSheet: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.bgCard,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     paddingBottom: 18,
@@ -3564,15 +3536,15 @@ const styles = StyleSheet.create({
   pickerTitle: {
     fontSize: 14,
     fontWeight: "900",
-    color: "#111827",
+    color: theme.textMain,
   },
   pickerAction: {
     fontSize: 14,
     fontWeight: "900",
-    color: "#6B7280",
+    color: theme.textMuted,
   },
   pickerActionPrimary: {
-    color: "#2563EB",
+    color: theme.primary,
   },
   // Confirm modal
   confirmOverlay: {
@@ -3585,10 +3557,10 @@ const styles = StyleSheet.create({
   confirmCard: {
     width: "100%",
     maxWidth: 520,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.bgCard,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
     padding: 16,
   },
   confirmHeader: {
@@ -3611,15 +3583,14 @@ const styles = StyleSheet.create({
   confirmTitle: {
     fontSize: 15,
     fontWeight: "900",
-    color: "#111827",
+    color: theme.textMain,
   },
   confirmMessage: {
-    color: "#374151",
+    color: theme.textMain,
     fontSize: 13,
     fontWeight: "600",
     lineHeight: 18,
     marginBottom: 14,
-    whiteSpace: "pre-wrap" as any,
   },
   confirmActions: {
     flexDirection: "row",
@@ -3634,13 +3605,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   confirmBtnGhost: {
-    backgroundColor: "#F3F4F6",
+    backgroundColor: theme.glass,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
   },
   confirmBtnGhostText: {
     fontWeight: "900",
-    color: "#374151",
+    color: theme.textMuted,
   },
   confirmBtnPrimary: {
     backgroundColor: "#2563EB",
@@ -3661,18 +3632,18 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
     fontWeight: "600",
-    color: "#6B7280",
+    color: theme.textMuted,
   },
   billSection: {
     marginBottom: 16,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: theme.glassBorder,
   },
   billSectionTitle: {
     fontSize: 13,
     fontWeight: "900",
-    color: "#6B7280",
+    color: theme.textMuted,
     textTransform: "uppercase",
     letterSpacing: 1,
     marginBottom: 10,
@@ -3685,34 +3656,34 @@ const styles = StyleSheet.create({
   },
   billInfoLabel: {
     fontSize: 13,
-    color: "#6B7280",
+    color: theme.textMuted,
     fontWeight: "600",
   },
   billInfoValue: {
     fontSize: 13,
-    color: "#111827",
+    color: theme.textMain,
     fontWeight: "700",
   },
   billRateInputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F9FAFB",
+    backgroundColor: theme.glass,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: theme.glassBorder,
     paddingHorizontal: 12,
     height: 48,
   },
   billRateCurrency: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#111827",
+    color: theme.textMain,
     marginRight: 8,
   },
   billRateInput: {
     flex: 1,
     fontSize: 15,
-    color: "#111827",
+    color: theme.textMain,
     fontWeight: "600",
     padding: 0,
   },
@@ -3724,13 +3695,13 @@ const styles = StyleSheet.create({
   },
   billItemName: {
     fontSize: 13,
-    color: "#374151",
+    color: theme.textMain,
     fontWeight: "600",
     flex: 1,
   },
   billItemAmount: {
     fontSize: 13,
-    color: "#111827",
+    color: theme.textMain,
     fontWeight: "700",
   },
   billNoItems: {
@@ -3747,20 +3718,20 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginTop: 6,
     borderTopWidth: 1,
-    borderTopColor: "#E5E7EB",
+    borderTopColor: theme.glassBorder,
   },
   billSubtotalLabel: {
     fontSize: 13,
-    color: "#6B7280",
+    color: theme.textMuted,
     fontWeight: "700",
   },
   billSubtotalAmount: {
     fontSize: 13,
-    color: "#2563EB",
+    color: theme.primary,
     fontWeight: "800",
   },
   billSummary: {
-    backgroundColor: "rgba(37, 99, 235, 0.06)",
+    backgroundColor: theme.glass,
     borderRadius: 12,
     padding: 14,
     marginBottom: 16,
@@ -3773,28 +3744,28 @@ const styles = StyleSheet.create({
   },
   billSummaryLabel: {
     fontSize: 13,
-    color: "#374151",
+    color: theme.textMain,
     fontWeight: "700",
   },
   billSummaryAmount: {
     fontSize: 13,
-    color: "#111827",
+    color: theme.textMain,
     fontWeight: "800",
   },
   billGrandTotalRow: {
     borderTopWidth: 1,
-    borderTopColor: "rgba(37, 99, 235, 0.2)",
+    borderTopColor: theme.glassBorder,
     paddingTop: 10,
     marginTop: 4,
   },
   billGrandTotalLabel: {
     fontSize: 15,
-    color: "#111827",
+    color: theme.textMain,
     fontWeight: "900",
   },
   billGrandTotalAmount: {
     fontSize: 18,
-    color: "#2563EB",
+    color: theme.primary,
     fontWeight: "900",
   },
   billFooter: {

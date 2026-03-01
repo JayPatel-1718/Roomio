@@ -13,7 +13,11 @@ import {
     TextInput,
     KeyboardAvoidingView,
     Platform,
+    Image,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import logoImage from '../../assets/images/logo.png';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { getAuth, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
@@ -25,7 +29,7 @@ export default function ProfileScreen() {
     const router = useRouter();
     const auth = getAuth();
     const user = auth.currentUser;
-    const { theme, mode, setMode } = useTheme();
+    const { theme, colors, mode, setMode } = useTheme();
     const { width } = useWindowDimensions();
     const isWide = width >= 900;
 
@@ -112,30 +116,56 @@ export default function ProfileScreen() {
             setLoading(false);
         }
     };
+    const guestAppUrl = `https://roomio-guest.vercel.app/?admin=${encodeURIComponent(
+        user?.email || user?.uid || "roomio"
+    )}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+        guestAppUrl
+    )}`;
 
-    const colors = theme === 'dark'
-        ? {
-            bgMain: "#010409",
-            bgCard: "rgba(13, 17, 23, 0.6)",
-            textMain: "#f0f6fc",
-            textMuted: "#8b949e",
-            glass: "rgba(255, 255, 255, 0.03)",
-            glassBorder: "rgba(255, 255, 255, 0.1)",
-            primary: "#2563eb",
-            danger: "#ef4444",
-            success: "#22c55e",
+    const downloadQR = async () => {
+        if (Platform.OS === 'web') {
+            try {
+                const response = await fetch(qrUrl);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `Roomio_Hotel_QR_${user?.uid?.slice(0, 5)}.png`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+            } catch (error) {
+                Alert.alert('Download Failed', 'Could not download the QR code image.');
+            }
+        } else {
+            try {
+                setLoading(true);
+                const fileName = `Roomio_Hotel_QR_${user?.uid?.slice(0, 5)}.png`;
+                const fileUri = (FileSystem as any).documentDirectory + fileName;
+
+                const downloadResult = await FileSystem.downloadAsync(qrUrl, fileUri);
+
+                if (downloadResult.status === 200) {
+                    await Sharing.shareAsync(downloadResult.uri, {
+                        mimeType: 'image/png',
+                        dialogTitle: 'Download Hotel QR Code',
+                        UTI: 'public.png'
+                    });
+                } else {
+                    throw new Error('Download failed');
+                }
+            } catch (error) {
+                console.error('QR Download Error:', error);
+                Alert.alert('Error', 'Failed to download QR code. You can long press the image to save it.');
+            } finally {
+                setLoading(false);
+            }
         }
-        : {
-            bgMain: "#f8fafc",
-            bgCard: "#ffffff",
-            textMain: "#0f172a",
-            textMuted: "#64748b",
-            glass: "rgba(37, 99, 235, 0.04)",
-            glassBorder: "rgba(37, 99, 235, 0.12)",
-            primary: "#2563eb",
-            danger: "#dc2626",
-            success: "#16a34a",
-        };
+    };
+
+
 
     return (
         <SafeAreaView style={[styles.safe, { backgroundColor: colors.bgMain }]}>
@@ -309,6 +339,37 @@ export default function ProfileScreen() {
                             <Text style={[styles.propertyType, { color: colors.textMain }]}>Villas</Text>
                             <Text style={[styles.propertyCount, { color: colors.textMuted }]}>Coming Soon</Text>
                         </View>
+                    </View>
+                </View>
+
+                {/* Hotel QR Code Section */}
+                <View style={[styles.card, { backgroundColor: colors.bgCard, borderColor: colors.glassBorder }]}>
+                    <View style={styles.sectionHeader}>
+                        <Ionicons name="qr-code-outline" size={24} color={colors.primary} />
+                        <Text style={[styles.sectionTitle, { color: colors.textMain }]}>Hotel QR Code</Text>
+                    </View>
+                    <Text style={[styles.qrDesc, { color: colors.textMuted }]}>
+                        Guests can scan this QR code to access your hotel's services and food menu.
+                    </Text>
+
+                    <View style={styles.qrContainer}>
+                        <View style={[styles.qrWrapper, { borderColor: colors.glassBorder }]}>
+                            <Image source={{ uri: qrUrl }} style={styles.qrImage} />
+                            <View style={styles.qrLogoOverlay}>
+                                <Image source={logoImage} style={styles.qrLogo} />
+                            </View>
+                        </View>
+
+                        <Pressable
+                            onPress={downloadQR}
+                            style={({ pressed }) => [
+                                styles.downloadBtn,
+                                { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 }
+                            ]}
+                        >
+                            <Ionicons name="download-outline" size={18} color="#fff" />
+                            <Text style={styles.downloadBtnText}>Download QR Code</Text>
+                        </Pressable>
                     </View>
                 </View>
 
@@ -490,6 +551,65 @@ const styles = StyleSheet.create({
     logoutText: {
         fontSize: 16,
         fontWeight: '900',
+    },
+    qrDesc: {
+        fontSize: 14,
+        fontWeight: '600',
+        marginBottom: 20,
+        lineHeight: 20,
+    },
+    qrContainer: {
+        alignItems: 'center',
+        gap: 20,
+    },
+    qrWrapper: {
+        padding: 12,
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        borderWidth: 1,
+        position: 'relative',
+    },
+    qrImage: {
+        width: 180,
+        height: 180,
+    },
+    qrLogoOverlay: {
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        marginTop: -18,
+        marginLeft: -18,
+        width: 36,
+        height: 36,
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        padding: 4,
+        alignItems: 'center',
+        justifyContent: 'center',
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+    },
+    qrLogo: {
+        width: 26,
+        height: 26,
+    },
+    downloadBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        paddingVertical: 14,
+        paddingHorizontal: 24,
+        borderRadius: 16,
+        width: '100%',
+    },
+    downloadBtnText: {
+        fontSize: 15,
+        fontWeight: '800',
+        color: '#fff',
     },
     versionText: {
         textAlign: 'center',

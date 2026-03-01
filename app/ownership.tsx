@@ -1,87 +1,174 @@
-import { useEffect } from "react";
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  Pressable, 
-  SafeAreaView, 
-  Image 
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { getAuth } from "firebase/auth";
-
-// Import your logo image
-import logoImage from "../assets/images/logo.png";
+import { useEffect, useRef } from "react";
+import {
+  Animated,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
+import { useTheme } from "../context/ThemeContext";
+const logoImage = require("../assets/images/logo.png");
+import { Image } from "react-native";
 
 export default function Ownership() {
   const router = useRouter();
   const auth = getAuth();
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
-    // protect this page (only after login)
+    // protect this page
     if (!auth.currentUser) {
       router.replace("/admin-login");
     }
+
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
+    ]).start();
   }, [auth, router]);
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        {/* Decorative Background */}
-        <View style={styles.backgroundDecor} pointerEvents="none">
-          <View style={styles.bgCircle1} />
-          <View style={styles.bgCircle2} />
-          <View style={styles.bgCircle3} />
+  const colors = {
+    background: isDark ? "#0F172A" : "#F8FAFC",
+    card: isDark ? "#1E293B" : "#FFFFFF",
+    textPrimary: isDark ? "#F8FAFC" : "#1E293B",
+    textSecondary: isDark ? "#94A3B8" : "#64748B",
+    accent: "#3B82F6",
+    success: "#22C55E",
+    border: isDark ? "#334155" : "#E2E8F0",
+    headerBg: isDark ? "#1E293B" : "#FFFFFF",
+    navItemBg: isDark ? "#334155" : "#F1F5F9",
+  };
+
+  const PropertyCard = ({
+    title,
+    description,
+    icon,
+    isAvailable,
+    onPress
+  }: {
+    title: string;
+    description: string;
+    icon: any;
+    isAvailable: boolean;
+    onPress?: () => void
+  }) => (
+    <Pressable
+      onPress={isAvailable ? onPress : undefined}
+      style={({ pressed }) => [
+        styles.card,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          opacity: isAvailable ? (pressed ? 0.95 : 1) : 1,
+          transform: [{ scale: isAvailable && Platform.OS !== "web" ? (pressed ? 0.98 : 1) : 1 }]
+        },
+        !isAvailable && styles.cardDisabled
+      ]}
+    >
+      <View style={styles.cardTop}>
+        <View style={[styles.iconBg, { backgroundColor: isAvailable ? colors.accent + "15" : colors.navItemBg }]}>
+          <Ionicons name={icon} size={28} color={isAvailable ? colors.accent : colors.textSecondary} />
         </View>
-
-        {/* Header */}
-        <View style={styles.header}>
-          {/* Logo Image Only */}
-          <Image 
-            source={logoImage} 
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
-
-          <Text style={styles.brand}>Roomio</Text>
-          <Text style={styles.title}>Select Property Type</Text>
-          <Text style={styles.subtitle}>
-            Currently supported: Hotel dashboard
-          </Text>
-        </View>
-
-        {/* ONLY HOTEL OPTION */}
-        <View style={styles.grid}>
-          <Pressable
-            onPress={() => router.replace("/(tabs)/dashboard")}
-            style={({ pressed }) => [
-              styles.choiceCard,
-              pressed && styles.choicePressed,
-            ]}
-          >
-            <View style={[styles.choiceIcon, { backgroundColor: "rgba(22,163,74,0.12)" }]}>
-              <Ionicons name="business-outline" size={26} color="#16A34A" />
-            </View>
-
-            <Text style={styles.choiceTitle}>Hotel</Text>
-            <Text style={styles.choiceSub}>
-              Room management, guest check-in, service requests
-            </Text>
-
-            <View style={styles.choiceActionRow}>
-              <Text style={styles.choiceActionText}>Open Hotel Dashboard</Text>
-              <Ionicons name="arrow-forward" size={18} color="#2563EB" />
-            </View>
-          </Pressable>
-        </View>
-
-        {/* Footer */}
-        <View style={styles.footer}>
-          <View style={styles.footerPill}>
-            <View style={styles.footerDot} />
-            <Text style={styles.footerText}>Secure Admin Session</Text>
+        {!isAvailable && (
+          <View style={[styles.badge, { backgroundColor: isDark ? "#334155" : "#F1F5F9" }]}>
+            <Text style={[styles.badgeText, { color: colors.textSecondary }]}>Coming Soon</Text>
           </View>
+        )}
+      </View>
+
+      <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{title}</Text>
+      <Text style={[styles.cardDesc, { color: colors.textSecondary }]}>{description}</Text>
+
+      <View style={styles.actionArea}>
+        {isAvailable ? (
+          <View style={[styles.activeButton, { backgroundColor: colors.accent }]}>
+            <Text style={styles.activeButtonText}>Open Dashboard</Text>
+            <Ionicons name="arrow-forward" size={16} color="#FFF" />
+          </View>
+        ) : (
+          <View style={[styles.disabledButton, { backgroundColor: isDark ? "#334155" : "#F1F5F9" }]}>
+            <Text style={[styles.disabledButtonText, { color: colors.textSecondary }]}>Notify Me</Text>
+          </View>
+        )}
+      </View>
+    </Pressable>
+  );
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={colors.background} />
+
+      {/* Top Header Pill */}
+      <View style={styles.topHeader}>
+        <View style={[styles.logoPill, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Image source={logoImage} style={styles.logoImagePill} resizeMode="contain" />
+          <Text style={[styles.brandText, { color: colors.textPrimary }]}>Roomio</Text>
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <Animated.View style={[styles.contentWrapper, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+
+          <View style={styles.headerSection}>
+            <Text style={[styles.mainTitle, { color: colors.textPrimary }]}>Select Property Type</Text>
+            <Text style={[styles.mainSubtitle, { color: colors.textSecondary }]}>
+              Currently supported: <Text style={{ color: colors.accent, fontWeight: "700" }}>Hotel dashboard</Text>
+            </Text>
+          </View>
+
+          <View style={styles.grid}>
+            <PropertyCard
+              title="Hotel"
+              description="Manage bookings, guests, and daily operations seamlessly with our integrated hotel management suite."
+              icon="bed-outline"
+              isAvailable={true}
+              onPress={() => router.replace("/(tabs)/dashboard")}
+            />
+
+            <View style={styles.row}>
+              <View style={styles.half}>
+                <PropertyCard
+                  title="Villas"
+                  description="Specialized tools for short-term rentals and private villa management."
+                  icon="home-outline"
+                  isAvailable={false}
+                />
+              </View>
+              <View style={styles.half}>
+                <PropertyCard
+                  title="PGs"
+                  description="Complete management system for paying guest accommodations and hostels."
+                  icon="people-outline"
+                  isAvailable={false}
+                />
+              </View>
+            </View>
+          </View>
+
+        </Animated.View>
+      </ScrollView>
+
+      {/* Footer Bar */}
+      <View style={[styles.footer, { borderTopColor: colors.border }]}>
+        <View style={styles.footerLeft}>
+          <Ionicons name="shield-checkmark" size={14} color={colors.success} />
+          <Text style={[styles.footerText, { color: colors.textSecondary }]}>Secure Admin Session</Text>
+        </View>
+        <View style={styles.footerRight}>
+          <Text style={[styles.footerLink, { color: colors.textSecondary }]}>Documentation</Text>
+          <Text style={[styles.footerLink, { color: colors.textSecondary }]}>Support</Text>
+          <Text style={[styles.versionText, { color: colors.textSecondary }]}>v2.4.0-stable</Text>
         </View>
       </View>
     </SafeAreaView>
@@ -89,138 +176,183 @@ export default function Ownership() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F9FAFB" },
-  container: { flex: 1, backgroundColor: "#F9FAFB", padding: 16 },
-
-  backgroundDecor: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
-  bgCircle1: {
-    position: "absolute",
-    top: -90,
-    right: -70,
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: "rgba(37, 99, 235, 0.08)",
+  container: {
+    flex: 1,
   },
-  bgCircle2: {
-    position: "absolute",
-    top: 160,
-    left: -110,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(37, 99, 235, 0.05)",
+  topHeader: {
+    height: 100,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  bgCircle3: {
-    position: "absolute",
-    bottom: 40,
-    right: -50,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: "rgba(37, 99, 235, 0.06)",
-  },
-
-  header: { 
-    alignItems: "center", 
-    marginTop: 18, 
-    marginBottom: 18 
-  },
-  logoImage: {
-    width: 120,
-    height: 120,
-    marginBottom: 14,
-  },
-
-  brand: { 
-    fontSize: 26, 
-    fontWeight: "800", 
-    color: "#111827",
-  },
-  title: { 
-    fontSize: 18, 
-    fontWeight: "800", 
-    color: "#111827", 
-    marginTop: 6 
-  },
-  subtitle: {
-    marginTop: 6,
-    textAlign: "center",
-    color: "#6B7280",
-    fontWeight: "600",
-    fontSize: 13,
-    maxWidth: 340,
-    lineHeight: 18,
-  },
-
-  grid: { gap: 12, marginTop: 12 },
-  choiceCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 16,
+  logoPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    gap: 10,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.05,
     shadowRadius: 10,
-    elevation: 4,
+    elevation: 2,
   },
-  choicePressed: { opacity: 0.92, transform: [{ scale: 0.99 }] },
-  choiceIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
+  logoImagePill: {
+    width: 24,
+    height: 24,
   },
-  choiceTitle: { fontSize: 16, fontWeight: "900", color: "#111827" },
-  choiceSub: { 
-    marginTop: 4, 
-    fontSize: 12, 
-    fontWeight: "700", 
-    color: "#6B7280", 
-    lineHeight: 18 
+  brandText: {
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: -0.5,
   },
 
-  choiceActionRow: {
-    marginTop: 14,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: "rgba(37, 99, 235, 0.08)",
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingVertical: 32,
+    flexGrow: 1,
+  },
+  contentWrapper: {
+    maxWidth: 800,
+    width: "100%",
+    alignSelf: "center",
+  },
+  headerSection: {
+    alignItems: "center",
+    marginBottom: 48,
+  },
+  mainTitle: {
+    fontSize: 36,
+    fontWeight: "800",
+    letterSpacing: -1,
+    textAlign: "center",
+  },
+  mainSubtitle: {
+    fontSize: 16,
+    marginTop: 12,
+    textAlign: "center",
+    fontWeight: "500",
+  },
+  grid: {
+    gap: 20,
+  },
+  row: {
+    flexDirection: Platform.OS === "web" ? "row" : "column",
+    gap: 20,
+  },
+  half: {
+    flex: 1,
+  },
+  card: {
+    padding: 24,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: "rgba(37, 99, 235, 0.15)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    elevation: 2,
+    justifyContent: "space-between",
+    minHeight: 220,
+  },
+  cardDisabled: {
+    borderStyle: "dashed",
+  },
+  cardTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 20,
+  },
+  iconBg: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  badge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  cardTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    marginBottom: 8,
+  },
+  cardDesc: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "500",
+    marginBottom: 24,
+  },
+  actionArea: {
+    marginTop: "auto",
+  },
+  activeButton: {
+    height: 48,
+    borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
+    shadowColor: "#3B82F6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
   },
-  choiceActionText: { color: "#2563EB", fontWeight: "900", fontSize: 13 },
-
-  footer: { 
-    marginTop: "auto", 
-    alignItems: "center", 
-    paddingBottom: 18 
+  activeButtonText: {
+    color: "#FFF",
+    fontSize: 15,
+    fontWeight: "700",
   },
-  footerPill: {
+  disabledButton: {
+    height: 48,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  disabledButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  footer: {
+    height: 64,
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(22, 163, 74, 0.10)",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    borderTopWidth: 1,
   },
-  footerDot: { 
-    width: 8, 
-    height: 8, 
-    borderRadius: 4, 
-    backgroundColor: "#16A34A" 
+  footerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
-  footerText: { 
-    color: "#16A34A", 
-    fontWeight: "800", 
-    fontSize: 12 
+  footerText: {
+    fontSize: 11,
+    fontWeight: "600",
   },
+  footerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  footerLink: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  versionText: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  }
 });

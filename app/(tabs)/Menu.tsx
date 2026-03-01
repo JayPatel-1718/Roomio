@@ -60,7 +60,7 @@ export default function MenuScreen() {
     const auth = getAuth();
     const user = auth.currentUser;
     const { width } = useWindowDimensions();
-    const { theme: currentTheme, mode, setMode } = useTheme();
+    const { theme: currentTheme, colors: T, mode, setMode } = useTheme();
     const isDark = currentTheme === 'dark';
     const isWide = width >= 900;
 
@@ -108,16 +108,7 @@ export default function MenuScreen() {
         Animated.timing(fadeAnim, { toValue: 1, duration: 450, useNativeDriver: true }).start();
     }, []);
 
-    // ─── THEME ────────────────────────────────────────────────────────────────
-    const T = isDark ? {
-        bg: '#010409', card: 'rgba(13,17,23,0.97)', text: '#f0f6fc', muted: '#8b949e',
-        glass: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.10)',
-        primary: '#2563eb', success: '#22c55e', danger: '#ef4444', warning: '#f59e0b',
-    } : {
-        bg: '#f8fafc', card: '#ffffff', text: '#0f172a', muted: '#64748b',
-        glass: 'rgba(37,99,235,0.04)', border: 'rgba(37,99,235,0.12)',
-        primary: '#2563eb', success: '#16a34a', danger: '#dc2626', warning: '#f59e0b',
-    };
+
 
     // ─── FIREBASE ─────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -238,23 +229,14 @@ export default function MenuScreen() {
             }
 
             const asset = result.assets[0];
-            console.log('📄 File picked:', asset.name, asset.mimeType);
 
-            // Show loading immediately
-            setImportOpen(true);
-            setParsing(true);
-            setParseStatus('📄 Reading file...');
-            setParsedItems([]);
-            setSelected(new Set());
-
-            // Determine file type and read accordingly
             if (asset.mimeType?.startsWith('image/')) {
                 const base64 = await readBase64(asset.uri);
                 await runImport(base64, 'image');
             }
             else if (asset.mimeType === 'text/plain' || asset.name?.endsWith('.txt')) {
                 const text = await FileSystem.readAsStringAsync(asset.uri, {
-                    encoding: FileSystem.EncodingType.UTF8,
+                    encoding: (FileSystem as any).EncodingType.UTF8,
                 });
                 await runImport(text, 'text');
             }
@@ -265,7 +247,7 @@ export default function MenuScreen() {
                 await runImport(base64, 'pdf');
             }
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('File picker error:', error);
             setImportOpen(false);
             setParsing(false);
@@ -304,7 +286,7 @@ export default function MenuScreen() {
 
             if (data && data.length > 0) {
                 setParsedItems(data);
-                setSelected(new Set(data.map((_, i) => i)));
+                setSelected(new Set(data.map((_: any, i: number) => i)));
 
                 Alert.alert(
                     '✅ Menu Scanned Successfully',
@@ -487,7 +469,7 @@ export default function MenuScreen() {
         const list = byCategory[cat.key] || [];
         const open = expandedCat === cat.key;
         return (
-            <View key={cat.key} style={[S.catWrap, { backgroundColor: T.card, borderColor: T.border }]}>
+            <View key={cat.key} style={[S.catWrap, { backgroundColor: T.bgCard, borderColor: T.glassBorder }]}>
                 <Pressable
                     onPress={() => setExpandedCat(open ? null : cat.key)}
                     style={({ pressed }) => [S.catRow, { borderLeftColor: cat.accent }, pressed && { opacity: 0.9 }]}>
@@ -495,23 +477,23 @@ export default function MenuScreen() {
                         <Text style={S.emoji}>{cat.icon}</Text>
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={[S.catTitle, { color: T.text }]}>{cat.title}</Text>
-                        <Text style={[S.catSub, { color: T.muted }]} numberOfLines={1}>{cat.subtitle}</Text>
+                        <Text style={[S.catTitle, { color: T.textMain }]}>{cat.title}</Text>
+                        <Text style={[S.catSub, { color: T.textMuted }]} numberOfLines={1}>{cat.subtitle}</Text>
                     </View>
                     <View style={S.catRight}>
-                        <View style={[S.countPill, { backgroundColor: T.glass, borderColor: T.border }]}>
+                        <View style={[S.countPill, { backgroundColor: T.glass, borderColor: T.glassBorder }]}>
                             <Text style={[S.countText, { color: cat.accent }]}>{list.length}</Text>
                         </View>
-                        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={T.muted} />
+                        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={T.textMuted} />
                     </View>
                 </Pressable>
 
                 {open && (
-                    <View style={[S.expandArea, { borderTopColor: T.border, backgroundColor: T.glass }]}>
+                    <View style={[S.expandArea, { borderTopColor: T.glassBorder, backgroundColor: T.glass }]}>
                         <View style={S.expandHeader}>
-                            <Text style={[S.expandLabel, { color: T.muted }]}>DISHES</Text>
+                            <Text style={[S.expandLabel, { color: T.textMuted }]}>DISHES</Text>
                             <Pressable onPress={() => openAdd(cat.key)}
-                                style={({ p }) => [S.addSmall, { backgroundColor: cat.accent }]}>
+                                style={({ pressed }) => [S.addSmall, { backgroundColor: cat.accent }]}>
                                 <Ionicons name="add" size={15} color="#fff" />
                                 <Text style={S.addSmallTxt}>Add</Text>
                             </Pressable>
@@ -519,13 +501,13 @@ export default function MenuScreen() {
 
                         {list.length === 0 ? (
                             <View style={S.emptyBox}>
-                                <Ionicons name="fast-food-outline" size={22} color={T.muted} />
-                                <Text style={[S.emptyTxt, { color: T.muted }]}>No {cat.title.toLowerCase()} dishes yet.</Text>
+                                <Ionicons name="fast-food-outline" size={22} color={T.textMuted} />
+                                <Text style={[S.emptyTxt, { color: T.textMuted }]}>No {cat.title.toLowerCase()} dishes yet.</Text>
                             </View>
                         ) : list.map(dish => {
                             const avail = dish.isAvailable !== false;
                             return (
-                                <View key={dish.id} style={[S.dishCard, { backgroundColor: T.card, borderColor: T.border }]}>
+                                <View key={dish.id} style={[S.dishCard, { backgroundColor: T.bgCard, borderColor: T.glassBorder }]}>
                                     <View style={S.dishTop}>
                                         <View style={{ flex: 1, minWidth: 0 }}>
                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -534,10 +516,10 @@ export default function MenuScreen() {
                                                         <View style={[S.vegInner, { backgroundColor: dish.isVeg ? '#16A34A' : '#DC2626' }]} />
                                                     </View>
                                                 )}
-                                                <Text style={[S.dishName, { color: T.text }]} numberOfLines={1}>{dish.name}</Text>
+                                                <Text style={[S.dishName, { color: T.textMain }]} numberOfLines={1}>{dish.name}</Text>
                                             </View>
                                             {!!dish.description && (
-                                                <Text style={[S.dishDesc, { color: T.muted }]} numberOfLines={2}>{dish.description}</Text>
+                                                <Text style={[S.dishDesc, { color: T.textMuted }]} numberOfLines={2}>{dish.description}</Text>
                                             )}
                                         </View>
                                         <Text style={[S.dishPrice, { color: cat.accent }]}>
@@ -559,11 +541,11 @@ export default function MenuScreen() {
                                         </Pressable>
                                         <View style={{ flexDirection: 'row', gap: 10 }}>
                                             <Pressable onPress={() => openEdit(dish)}
-                                                style={({ pressed }) => [S.iconBtn, { backgroundColor: T.glass, borderColor: T.border }, pressed && { opacity: 0.8 }]}>
+                                                style={({ pressed }) => [S.iconBtn, { backgroundColor: T.glass, borderColor: T.glassBorder }, pressed && { opacity: 0.8 }]}>
                                                 <Ionicons name="create-outline" size={17} color={T.primary} />
                                             </Pressable>
                                             <Pressable onPress={() => deleteDish(dish)}
-                                                style={({ pressed }) => [S.iconBtn, { backgroundColor: T.glass, borderColor: T.border }, pressed && { opacity: 0.8 }]}>
+                                                style={({ pressed }) => [S.iconBtn, { backgroundColor: T.glass, borderColor: T.glassBorder }, pressed && { opacity: 0.8 }]}>
                                                 <Ionicons name="trash-outline" size={17} color={T.danger} />
                                             </Pressable>
                                         </View>
@@ -585,10 +567,10 @@ export default function MenuScreen() {
 
     if (!user) {
         return (
-            <SafeAreaView style={[S.safe, { backgroundColor: T.bg }]}>
+            <SafeAreaView style={[S.safe, { backgroundColor: T.bgMain }]}>
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                    <Ionicons name="lock-closed-outline" size={28} color={T.muted} />
-                    <Text style={{ marginTop: 12, color: T.muted, fontWeight: '800', fontSize: 15 }}>
+                    <Ionicons name="lock-closed-outline" size={28} color={T.textMuted} />
+                    <Text style={{ marginTop: 12, color: T.textMuted, fontWeight: '800', fontSize: 15 }}>
                         Please login to manage menu
                     </Text>
                 </View>
@@ -598,24 +580,24 @@ export default function MenuScreen() {
 
     // ─── FULL RENDER ──────────────────────────────────────────────────────────
     return (
-        <SafeAreaView style={[S.safe, { backgroundColor: T.bg }]}>
+        <SafeAreaView style={[S.safe, { backgroundColor: T.bgMain }]}>
 
             {/* CONFIRM MODAL */}
             <Modal visible={confirm.open} transparent animationType="fade" onRequestClose={() => setConfirm(c => ({ ...c, open: false }))}>
                 <View style={S.overlay}>
-                    <View style={[S.confirmCard, { backgroundColor: T.card, borderColor: T.border }]}>
+                    <View style={[S.confirmCard, { backgroundColor: T.bgCard, borderColor: T.glassBorder }]}>
                         <View style={S.confirmHead}>
                             <View style={[S.confirmIcon, confirm.variant === 'destructive' && { backgroundColor: 'rgba(220,38,38,0.12)' }]}>
                                 <Ionicons name={confirm.variant === 'destructive' ? 'warning-outline' : 'help-circle-outline'} size={20}
                                     color={confirm.variant === 'destructive' ? T.danger : T.primary} />
                             </View>
-                            <Text style={[S.confirmTitle, { color: T.text, flex: 1 }]}>{confirm.title}</Text>
+                            <Text style={[S.confirmTitle, { color: T.textMain, flex: 1 }]}>{confirm.title}</Text>
                         </View>
-                        <Text style={[S.confirmMsg, { color: T.muted }]}>{confirm.message}</Text>
+                        <Text style={[S.confirmMsg, { color: T.textMuted }]}>{confirm.message}</Text>
                         <View style={S.confirmBtns}>
                             <Pressable onPress={() => setConfirm(c => ({ ...c, open: false }))} disabled={confirmBusy}
-                                style={({ pressed }) => [S.confirmBtn, { backgroundColor: T.glass, borderWidth: 1.5, borderColor: T.border }, pressed && { opacity: 0.9 }]}>
-                                <Text style={[{ fontWeight: '900' }, { color: T.muted }]}>Cancel</Text>
+                                style={({ pressed }) => [S.confirmBtn, { backgroundColor: T.glass, borderWidth: 1.5, borderColor: T.glassBorder }, pressed && { opacity: 0.9 }]}>
+                                <Text style={[{ fontWeight: '900' }, { color: T.textMuted }]}>Cancel</Text>
                             </Pressable>
                             <Pressable disabled={confirmBusy}
                                 onPress={async () => {
@@ -635,28 +617,28 @@ export default function MenuScreen() {
             {/* ADD / EDIT MODAL */}
             <Modal visible={modalOpen} animationType="slide" transparent onRequestClose={closeModal}>
                 <View style={S.overlay}>
-                    <View style={[S.modalCard, { backgroundColor: T.card, borderColor: T.border }, isWide && { maxWidth: 700, alignSelf: 'center', width: '100%' }]}>
-                        <View style={[S.modalHead, { borderBottomColor: T.border }]}>
+                    <View style={[S.modalCard, { backgroundColor: T.bgCard, borderColor: T.glassBorder }, isWide && { maxWidth: 700, alignSelf: 'center', width: '100%' }]}>
+                        <View style={[S.modalHead, { borderBottomColor: T.glassBorder }]}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                                 <View style={[S.modalIcon, { backgroundColor: `${T.primary}15` }]}>
                                     <Ionicons name="restaurant-outline" size={18} color={T.primary} />
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={[S.modalTitle, { color: T.text }]}>
+                                    <Text style={[S.modalTitle, { color: T.textMain }]}>
                                         {editId ? 'Edit Dish' : 'Add Dish'}{rewriteCount > 0 ? ` (AI ×${rewriteCount})` : ''}
                                     </Text>
-                                    <Text style={[S.modalSub, { color: T.muted }]}>Category + name required</Text>
+                                    <Text style={[S.modalSub, { color: T.textMuted }]}>Category + name required</Text>
                                 </View>
                             </View>
                             <Pressable onPress={closeModal} disabled={saving || rewriting}
-                                style={[S.closeBtn, { backgroundColor: T.glass, borderColor: T.border }]}>
-                                <Ionicons name="close" size={18} color={T.muted} />
+                                style={[S.closeBtn, { backgroundColor: T.glass, borderColor: T.glassBorder }]}>
+                                <Ionicons name="close" size={18} color={T.textMuted} />
                             </Pressable>
                         </View>
 
                         <ScrollView style={S.modalBody} contentContainerStyle={{ paddingBottom: 20 }} keyboardShouldPersistTaps="handled">
                             {/* Category chips */}
-                            <Text style={[S.lbl, { color: T.text }]}>Category</Text>
+                            <Text style={[S.lbl, { color: T.textMain }]}>Category</Text>
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }}>
                                 <View style={{ flexDirection: 'row', gap: 8 }}>
                                     {categories.map(c => {
@@ -666,10 +648,10 @@ export default function MenuScreen() {
                                                 style={[S.chip,
                                                 {
                                                     backgroundColor: active ? `${c.accent}15` : T.glass,
-                                                    borderColor: active ? `${c.accent}40` : T.border
+                                                    borderColor: active ? `${c.accent}40` : T.glassBorder
                                                 }]}>
                                                 <Text style={{ fontSize: 13, marginRight: 4 }}>{c.icon}</Text>
-                                                <Text style={[S.chipTxt, { color: active ? c.accent : T.muted }]}>{c.title}</Text>
+                                                <Text style={[S.chipTxt, { color: active ? c.accent : T.textMuted }]}>{c.title}</Text>
                                             </Pressable>
                                         );
                                     })}
@@ -677,35 +659,35 @@ export default function MenuScreen() {
                             </ScrollView>
 
                             {/* Name */}
-                            <Text style={[S.lbl, { color: T.text }]}>Dish Name *</Text>
-                            <View style={[S.inputRow, { backgroundColor: T.glass, borderColor: T.border }]}>
+                            <Text style={[S.lbl, { color: T.textMain }]}>Dish Name *</Text>
+                            <View style={[S.inputRow, { backgroundColor: T.glass, borderColor: T.glassBorder }]}>
                                 <Ionicons name="fast-food-outline" size={17} color={T.primary} style={{ marginRight: 10 }} />
                                 <TextInput value={name} onChangeText={setName}
                                     placeholder="e.g., Masala Dosa, Butter Chicken"
-                                    placeholderTextColor={T.muted} style={[S.input, { color: T.text }]} autoCorrect={false} />
+                                    placeholderTextColor={T.textMuted} style={[S.input, { color: T.textMain }]} autoCorrect={false} />
                             </View>
 
                             {/* Price */}
-                            <Text style={[S.lbl, { color: T.text }]}>Price ₹ (optional)</Text>
-                            <View style={[S.inputRow, { backgroundColor: T.glass, borderColor: T.border }]}>
+                            <Text style={[S.lbl, { color: T.textMain }]}>Price ₹ (optional)</Text>
+                            <View style={[S.inputRow, { backgroundColor: T.glass, borderColor: T.glassBorder }]}>
                                 <Ionicons name="cash-outline" size={17} color={T.success} style={{ marginRight: 10 }} />
                                 <TextInput value={priceText} onChangeText={setPriceText}
-                                    placeholder="0.00" placeholderTextColor={T.muted}
-                                    style={[S.input, { color: T.text }]} keyboardType="numeric" />
+                                    placeholder="0.00" placeholderTextColor={T.textMuted}
+                                    style={[S.input, { color: T.textMain }]} keyboardType="numeric" />
                             </View>
 
                             {/* Description row */}
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                <Text style={[S.lbl, { color: T.text, marginBottom: 0 }]}>Description</Text>
+                                <Text style={[S.lbl, { color: T.textMain, marginBottom: 0 }]}>Description</Text>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                     {aiHistory.length > 0 && (
                                         <View style={[S.histNav, { backgroundColor: T.glass }]}>
                                             <Pressable onPress={() => navHistory(-1)} disabled={aiIdx <= 0} style={S.histBtn}>
-                                                <Ionicons name="chevron-back" size={11} color={aiIdx <= 0 ? T.muted : T.text} />
+                                                <Ionicons name="chevron-back" size={11} color={aiIdx <= 0 ? T.textMuted : T.textMain} />
                                             </Pressable>
-                                            <Text style={[S.histTxt, { color: T.text }]}>{aiIdx + 1}/{aiHistory.length}</Text>
+                                            <Text style={[S.histTxt, { color: T.textMain }]}>{aiIdx + 1}/{aiHistory.length}</Text>
                                             <Pressable onPress={() => navHistory(1)} disabled={aiIdx >= aiHistory.length - 1} style={S.histBtn}>
-                                                <Ionicons name="chevron-forward" size={11} color={aiIdx >= aiHistory.length - 1 ? T.muted : T.text} />
+                                                <Ionicons name="chevron-forward" size={11} color={aiIdx >= aiHistory.length - 1 ? T.textMuted : T.textMain} />
                                             </Pressable>
                                         </View>
                                     )}
@@ -717,21 +699,21 @@ export default function MenuScreen() {
                                     </Pressable>
                                 </View>
                             </View>
-                            <View style={[S.inputRow, S.textArea, { backgroundColor: T.glass, borderColor: T.border }]}>
+                            <View style={[S.inputRow, S.textArea, { backgroundColor: T.glass, borderColor: T.glassBorder }]}>
                                 <TextInput value={desc} onChangeText={setDesc}
                                     placeholder="Ingredients, preparation, taste..."
-                                    placeholderTextColor={T.muted} style={[S.textAreaInput, { color: T.text }]}
+                                    placeholderTextColor={T.textMuted} style={[S.textAreaInput, { color: T.textMain }]}
                                     multiline textAlignVertical="top" />
                             </View>
 
                             {/* Available */}
-                            <View style={[S.switchRow, { backgroundColor: T.glass, borderColor: T.border }]}>
+                            <View style={[S.switchRow, { backgroundColor: T.glass, borderColor: T.glassBorder }]}>
                                 <View>
-                                    <Text style={[{ fontSize: 15, fontWeight: '700' }, { color: T.text }]}>Available</Text>
-                                    <Text style={[{ fontSize: 12, marginTop: 2 }, { color: T.muted }]}>Show in guest menu</Text>
+                                    <Text style={[{ fontSize: 15, fontWeight: '700' }, { color: T.textMain }]}>Available</Text>
+                                    <Text style={[{ fontSize: 12, marginTop: 2 }, { color: T.textMuted }]}>Show in guest menu</Text>
                                 </View>
                                 <Switch value={isAvail} onValueChange={setIsAvail}
-                                    trackColor={{ false: T.border, true: `${T.primary}60` }} thumbColor={isAvail ? T.primary : '#F3F4F6'} />
+                                    trackColor={{ false: T.glassBorder, true: `${T.primary}60` }} thumbColor={isAvail ? T.primary : '#F3F4F6'} />
                             </View>
 
                             {aiError && (
@@ -742,10 +724,10 @@ export default function MenuScreen() {
                             )}
                         </ScrollView>
 
-                        <View style={[S.modalFoot, { borderTopColor: T.border }]}>
+                        <View style={[S.modalFoot, { borderTopColor: T.glassBorder }]}>
                             <Pressable onPress={closeModal} disabled={saving || rewriting}
-                                style={[S.btnCancel, { backgroundColor: T.glass, borderColor: T.border }]}>
-                                <Text style={[{ fontSize: 14, fontWeight: '800' }, { color: T.muted }]}>Cancel</Text>
+                                style={[S.btnCancel, { backgroundColor: T.glass, borderColor: T.glassBorder }]}>
+                                <Text style={[{ fontSize: 14, fontWeight: '800' }, { color: T.textMuted }]}>Cancel</Text>
                             </Pressable>
                             <Pressable onPress={saveDish} disabled={saving || rewriting}
                                 style={[S.btnSave, { backgroundColor: T.primary }, saving && { opacity: 0.7 }]}>
@@ -760,18 +742,18 @@ export default function MenuScreen() {
             {/* AI REWRITE MODAL */}
             <Modal visible={showRewriteModal} transparent animationType="fade" onRequestClose={closeRewriteModal}>
                 <View style={S.overlay}>
-                    <View style={[S.modalCard, S.aiModal, { backgroundColor: T.card, borderColor: T.border }]}>
-                        <View style={[S.modalHead, { borderBottomColor: T.border }]}>
+                    <View style={[S.modalCard, S.aiModal, { backgroundColor: T.bgCard, borderColor: T.glassBorder }]}>
+                        <View style={[S.modalHead, { borderBottomColor: T.glassBorder }]}>
                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                 <View style={S.aiIconBadge}><Ionicons name="sparkles" size={15} color="#7C3AED" /></View>
-                                <Text style={[S.modalTitle, { color: T.text }]}>AI Magic Rewrite</Text>
+                                <Text style={[S.modalTitle, { color: T.textMain }]}>AI Magic Rewrite</Text>
                             </View>
-                            <Pressable onPress={closeRewriteModal} style={[S.closeBtn, { backgroundColor: T.glass, borderColor: T.border }]}>
-                                <Ionicons name="close" size={18} color={T.muted} />
+                            <Pressable onPress={closeRewriteModal} style={[S.closeBtn, { backgroundColor: T.glass, borderColor: T.glassBorder }]}>
+                                <Ionicons name="close" size={18} color={T.textMuted} />
                             </Pressable>
                         </View>
                         <ScrollView style={{ padding: 20 }}>
-                            <Text style={[S.lbl, { color: T.text, marginTop: 0 }]}>Enhance "{name}"</Text>
+                            <Text style={[S.lbl, { color: T.textMain, marginTop: 0 }]}>Enhance "{name}"</Text>
 
                             <Pressable onPress={() => { closeRewriteModal(); doRewrite(); }}
                                 style={S.quickBtn}>
@@ -787,25 +769,25 @@ export default function MenuScreen() {
                                 OR CUSTOMIZE
                             </Text>
 
-                            <Text style={[S.lbl, { color: T.text, textTransform: 'none', fontSize: 13 }]}>Title Keywords (optional)</Text>
-                            <TextInput style={[S.aiInput, { backgroundColor: T.glass, borderColor: T.border, color: T.text }]}
-                                placeholder="e.g., Spicy, Crispy, Homemade" placeholderTextColor={T.muted}
+                            <Text style={[S.lbl, { color: T.textMain, textTransform: 'none', fontSize: 13 }]}>Title Keywords (optional)</Text>
+                            <TextInput style={[S.aiInput, { backgroundColor: T.glass, borderColor: T.glassBorder, color: T.textMain }]}
+                                placeholder="e.g., Spicy, Crispy, Homemade" placeholderTextColor={T.textMuted}
                                 value={titleHints} onChangeText={setTitleHints} />
-                            <Text style={[S.lbl, { color: T.text, textTransform: 'none', fontSize: 13 }]}>Description Style (optional)</Text>
-                            <TextInput style={[S.aiInput, { backgroundColor: T.glass, borderColor: T.border, color: T.text }]}
-                                placeholder="e.g., served with mint chutney, cooked in ghee" placeholderTextColor={T.muted}
+                            <Text style={[S.lbl, { color: T.textMain, textTransform: 'none', fontSize: 13 }]}>Description Style (optional)</Text>
+                            <TextInput style={[S.aiInput, { backgroundColor: T.glass, borderColor: T.glassBorder, color: T.textMain }]}
+                                placeholder="e.g., served with mint chutney, cooked in ghee" placeholderTextColor={T.textMuted}
                                 value={descHints} onChangeText={setDescHints} />
                             <Pressable onPress={() => doRewrite({ titleElements: titleHints, descriptionElements: descHints })}
                                 disabled={!titleHints && !descHints}
-                                style={[S.genBtn, (!titleHints && !descHints) && { backgroundColor: T.border }]}>
+                                style={[S.genBtn, (!titleHints && !descHints) && { backgroundColor: T.glassBorder }]}>
                                 <Ionicons name="sparkles" size={17} color="#fff" />
                                 <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>Generate Custom</Text>
                             </Pressable>
 
-                            <View style={[S.quickActs, { borderTopColor: T.border }]}>
+                            <View style={[S.quickActs, { borderTopColor: T.glassBorder }]}>
                                 <Pressable style={S.txtBtn} onPress={() => { closeRewriteModal(); const h = [...aiHistory]; const n = h; setAiHistory([]); setAiIdx(-1); hasAiRef.current = false; doRewrite(null); }}>
-                                    <Ionicons name="refresh" size={13} color={T.text} />
-                                    <Text style={[{ fontSize: 12, fontWeight: '800' }, { color: T.text }]}>Fresh Rewrite</Text>
+                                    <Ionicons name="refresh" size={13} color={T.textMain} />
+                                    <Text style={[{ fontSize: 12, fontWeight: '800' }, { color: T.textMain }]}>Fresh Rewrite</Text>
                                 </Pressable>
                                 {(aiHistory.length > 0 || hasAiRef.current) && (
                                     <Pressable style={S.txtBtn} onPress={() => { revertAI(); closeRewriteModal(); }}>
@@ -822,23 +804,23 @@ export default function MenuScreen() {
             {/* IMPORT MODAL */}
             <Modal visible={importOpen} animationType="slide" transparent>
                 <View style={S.overlay}>
-                    <View style={[S.modalCard, { height: '90%', backgroundColor: T.card, borderColor: T.border }]}>
-                        <View style={[S.modalHead, { borderBottomColor: T.border }]}>
+                    <View style={[S.modalCard, { height: '90%', backgroundColor: T.bgCard, borderColor: T.glassBorder }]}>
+                        <View style={[S.modalHead, { borderBottomColor: T.glassBorder }]}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
                                 <View style={[S.modalIcon, { backgroundColor: '#7C3AED18' }]}>
                                     <Ionicons name="sparkles" size={18} color="#7C3AED" />
                                 </View>
                                 <View>
-                                    <Text style={[S.modalTitle, { color: T.text }]}>AI Menu Sync</Text>
-                                    <Text style={[S.modalSub, { color: T.muted }]}>
+                                    <Text style={[S.modalTitle, { color: T.textMain }]}>AI Menu Sync</Text>
+                                    <Text style={[S.modalSub, { color: T.textMuted }]}>
                                         {parsing ? parseStatus || 'Processing...' : `${parsedItems.length} items detected`}
                                     </Text>
                                 </View>
                             </View>
                             {!parsing && (
                                 <Pressable onPress={() => { setImportOpen(false); setParsedItems([]); }}
-                                    style={[S.closeBtn, { backgroundColor: T.glass, borderColor: T.border }]}>
-                                    <Ionicons name="close" size={18} color={T.muted} />
+                                    style={[S.closeBtn, { backgroundColor: T.glass, borderColor: T.glassBorder }]}>
+                                    <Ionicons name="close" size={18} color={T.textMuted} />
                                 </Pressable>
                             )}
                         </View>
@@ -849,33 +831,33 @@ export default function MenuScreen() {
                                     <View style={S.spinnerWrap}>
                                         <ActivityIndicator size="large" color="#7C3AED" />
                                     </View>
-                                    <Text style={[S.parsTitle, { color: T.text }]}>
+                                    <Text style={[S.parsTitle, { color: T.textMain }]}>
                                         {parseStatus || 'AI is reading your menu...'}
                                     </Text>
-                                    <Text style={[S.parsDesc, { color: T.muted }]}>
+                                    <Text style={[S.parsDesc, { color: T.textMuted }]}>
                                         OCR extracts all text, then AI structures it into menu items. This takes 10–30 seconds.
                                     </Text>
                                     {['Extracting text with OCR', 'Identifying every dish', 'Detecting prices', 'Auto-categorizing items'].map((t, i) => (
                                         <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
                                             <Ionicons name="ellipse" size={6} color="#7C3AED" />
-                                            <Text style={{ color: T.muted, fontSize: 13 }}>{t}</Text>
+                                            <Text style={{ color: T.textMuted, fontSize: 13 }}>{t}</Text>
                                         </View>
                                     ))}
                                 </View>
                             ) : (
                                 <>
                                     {parsedItems.length > 0 && (
-                                        <View style={[S.selRow, { borderBottomColor: T.border }]}>
+                                        <View style={[S.selRow, { borderBottomColor: T.glassBorder }]}>
                                             <Pressable onPress={() => setSelected(
                                                 selected.size === parsedItems.length ? new Set() : new Set(parsedItems.map((_: any, i: number) => i))
                                             )} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                                 <Ionicons name={selected.size === parsedItems.length ? 'checkbox' : 'square-outline'} size={20} color={T.primary} />
-                                                <Text style={{ color: T.text, fontSize: 14, fontWeight: '700' }}>
+                                                <Text style={{ color: T.textMain, fontSize: 14, fontWeight: '700' }}>
                                                     {selected.size === parsedItems.length ? 'Deselect All' : 'Select All'}
-                                                    <Text style={{ color: T.muted }}> ({selected.size}/{parsedItems.length})</Text>
+                                                    <Text style={{ color: T.textMuted }}> ({selected.size}/{parsedItems.length})</Text>
                                                 </Text>
                                             </Pressable>
-                                            <Text style={{ color: T.muted, fontSize: 12 }}>
+                                            <Text style={{ color: T.textMuted, fontSize: 12 }}>
                                                 {new Set(parsedItems.map((i: any) => i.category)).size} categories
                                             </Text>
                                         </View>
@@ -893,14 +875,14 @@ export default function MenuScreen() {
                                                     style={[S.parsedCard,
                                                     {
                                                         backgroundColor: sel ? `${meta.accent}08` : T.glass,
-                                                        borderColor: sel ? `${meta.accent}40` : T.border
+                                                        borderColor: sel ? `${meta.accent}40` : T.glassBorder
                                                     }]}>
                                                     <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
                                                         <Ionicons name={sel ? 'checkbox' : 'square-outline'} size={18}
-                                                            color={sel ? meta.accent : T.muted} style={{ marginRight: 10, marginTop: 2 }} />
+                                                            color={sel ? meta.accent : T.textMuted} style={{ marginRight: 10, marginTop: 2 }} />
                                                         <View style={{ flex: 1 }}>
                                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                                                <Text style={{ fontSize: 15, fontWeight: '900', color: T.text }}>{item.name}</Text>
+                                                                <Text style={{ fontSize: 15, fontWeight: '900', color: T.textMain }}>{item.name}</Text>
                                                                 {item.isVeg !== null && item.isVeg !== undefined && (
                                                                     <View style={[S.vegDot, { borderColor: item.isVeg ? '#16A34A' : '#DC2626' }]}>
                                                                         <View style={[S.vegInner, { backgroundColor: item.isVeg ? '#16A34A' : '#DC2626' }]} />
@@ -908,7 +890,7 @@ export default function MenuScreen() {
                                                                 )}
                                                             </View>
                                                             {!!item.description && (
-                                                                <Text style={{ fontSize: 12, color: T.muted, marginTop: 3, lineHeight: 17 }} numberOfLines={2}>
+                                                                <Text style={{ fontSize: 12, color: T.textMuted, marginTop: 3, lineHeight: 17 }} numberOfLines={2}>
                                                                     {item.description}
                                                                 </Text>
                                                             )}
@@ -942,10 +924,10 @@ export default function MenuScreen() {
                         </View>
 
                         {!parsing && parsedItems.length > 0 && (
-                            <View style={[S.modalFoot, { borderTopColor: T.border }]}>
+                            <View style={[S.modalFoot, { borderTopColor: T.glassBorder }]}>
                                 <Pressable onPress={() => { setImportOpen(false); setParsedItems([]); }}
-                                    style={[S.btnCancel, { backgroundColor: T.glass, borderColor: T.border }]}>
-                                    <Text style={{ fontSize: 14, fontWeight: '800', color: T.muted }}>Discard</Text>
+                                    style={[S.btnCancel, { backgroundColor: T.glass, borderColor: T.glassBorder }]}>
+                                    <Text style={{ fontSize: 14, fontWeight: '800', color: T.textMuted }}>Discard</Text>
                                 </Pressable>
                                 <Pressable onPress={saveImported} disabled={saving || selected.size === 0}
                                     style={[S.btnSave, { backgroundColor: '#7C3AED' }, selected.size === 0 && { opacity: 0.5 }]}>
@@ -961,10 +943,10 @@ export default function MenuScreen() {
             {/* MAIN SCREEN */}
             <Animated.View style={{ opacity: fadeAnim, flex: 1 }}>
                 {/* HEADER */}
-                <View style={[S.header, { backgroundColor: T.card }]}>
+                <View style={[S.header, { backgroundColor: T.bgCard }]}>
                     <View style={S.headerLeft}>
-                        <Text style={[S.greeting, { color: T.muted }]}>HOTEL MENU</Text>
-                        <Text style={[S.title, { color: T.text }]}>Menu Management</Text>
+                        <Text style={[S.greeting, { color: T.textMuted }]}>HOTEL MENU</Text>
+                        <Text style={[S.title, { color: T.textMain }]}>Menu Management</Text>
                     </View>
                     <View style={S.headerRight}>
 
@@ -975,19 +957,19 @@ export default function MenuScreen() {
                         </Pressable>
                     </View>
 
-                    <View style={[S.importBar, { backgroundColor: T.glass, borderColor: T.border }]}>
+                    <View style={[S.importBar, { backgroundColor: T.glass, borderColor: T.glassBorder }]}>
                         <Pressable onPress={handleGallery}
                             style={({ pressed }) => [S.importOption, pressed && { opacity: 0.8 }]}>
-                            <Ionicons name="images-outline" size={15} color={T.text} />
-                            <Text style={[S.importTxt, { color: T.text }]}>Photo Library</Text>
+                            <Ionicons name="images-outline" size={15} color={T.textMain} />
+                            <Text style={[S.importTxt, { color: T.textMain }]}>Photo Library</Text>
                         </Pressable>
-                        <View style={[S.dividerV, { backgroundColor: T.border }]} />
+                        <View style={[S.dividerV, { backgroundColor: T.glassBorder }]} />
                         <Pressable onPress={handleFile}
                             style={({ pressed }) => [S.importOption, pressed && { opacity: 0.8 }]}>
-                            <Ionicons name="document-text-outline" size={15} color={T.text} />
-                            <Text style={[S.importTxt, { color: T.text }]}>PDF / File</Text>
+                            <Ionicons name="document-text-outline" size={15} color={T.textMain} />
+                            <Text style={[S.importTxt, { color: T.textMain }]}>PDF / File</Text>
                         </Pressable>
-                        <View style={[S.dividerV, { backgroundColor: T.border }]} />
+                        <View style={[S.dividerV, { backgroundColor: T.glassBorder }]} />
                         <Pressable onPress={() => openAdd()}
                             style={({ pressed }) => [S.importOption, pressed && { opacity: 0.8 }]}>
                             <Ionicons name="add-circle-outline" size={15} color={T.primary} />
@@ -1003,9 +985,9 @@ export default function MenuScreen() {
 
             {saving && (
                 <View style={S.loadOverlay}>
-                    <View style={[S.loadBox, { backgroundColor: T.card }]}>
+                    <View style={[S.loadBox, { backgroundColor: T.bgCard }]}>
                         <ActivityIndicator size="large" color={T.primary} />
-                        <Text style={[{ marginTop: 12, fontSize: 14, fontWeight: '800' }, { color: T.text }]}>Saving...</Text>
+                        <Text style={[{ marginTop: 12, fontSize: 14, fontWeight: '800' }, { color: T.textMain }]}>Saving...</Text>
                     </View>
                 </View>
             )}
