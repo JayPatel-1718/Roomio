@@ -2529,23 +2529,6 @@ This action CANNOT be undone.`,
             </View>
           </View>
         </View>
-        {/* SEARCH BAR */}
-        <View style={[styles.searchContainer, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
-          <Ionicons name="search" size={20} color={theme.textMuted} />
-          <TextInput
-            placeholder="Search rooms (e.g. 102)"
-            placeholderTextColor={theme.textMuted}
-            style={[styles.searchInput, { color: theme.textMain }]}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            keyboardType="number-pad"
-          />
-          {searchQuery ? (
-            <Pressable onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={18} color="#9CA3AF" />
-            </Pressable>
-          ) : null}
-        </View>
         {/* Global Logs Buttons */}
         <View style={styles.globalLogsContainer}>
           <Pressable

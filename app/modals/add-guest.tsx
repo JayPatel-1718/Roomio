@@ -13,6 +13,7 @@ import {
   StatusBar,
   Modal,
   useWindowDimensions,
+  useColorScheme,
 } from "react-native";
 import { useState, useEffect } from "react";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
@@ -31,7 +32,6 @@ import {
 import { db, auth } from "../../firebase/firebaseConfig";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import {
   getUserRoomsRef,
   getUserRoomRef,
@@ -43,9 +43,15 @@ type Meal = "breakfast" | "lunch" | "dinner";
 export default function AddGuest() {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const systemColorScheme = useColorScheme();
   const isWide = width >= 820;
 
+  // Theme state
+  const [isDark, setIsDark] = useState(systemColorScheme === 'dark');
+
   const [guestName, setGuestName] = useState("");
+  const [aadharNumber, setAadharNumber] = useState("");
+  const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
   const [checkinDate, setCheckinDate] = useState<Date | null>(new Date());
   const [checkoutDate, setCheckoutDate] = useState<Date | null>(() => {
@@ -55,7 +61,9 @@ export default function AddGuest() {
     return tomorrow;
   });
 
-  // iOS modal pickers (Android uses DateTimePickerAndroid; Web uses native <input type="datetime-local">)
+  const [availableRoom, setAvailableRoom] = useState<any>(null);
+
+  // iOS modal pickers
   const [showCheckinPicker, setShowCheckinPicker] = useState(false);
   const [showCheckoutPicker, setShowCheckoutPicker] = useState(false);
   const [iosTempCheckin, setIosTempCheckin] = useState<Date>(new Date());
@@ -67,9 +75,39 @@ export default function AddGuest() {
   const [isFocused, setIsFocused] = useState<{
     name: boolean;
     mobile: boolean;
+    email: boolean;
+    aadhar: boolean;
     checkin: boolean;
     checkout: boolean;
-  }>({ name: false, mobile: false, checkin: false, checkout: false });
+  }>({
+    name: false,
+    mobile: false,
+    email: false,
+    aadhar: false,
+    checkin: false,
+    checkout: false
+  });
+
+  // Theme colors
+  const theme = {
+    background: isDark ? '#010101' : '#FFFFFF',
+    surface: isDark ? '#1A1A1A' : '#F9FAFB',
+    card: isDark ? '#1E1E1E' : '#FFFFFF',
+    text: isDark ? '#FFFFFF' : '#111827',
+    textSecondary: isDark ? '#9CA3AF' : '#6B7280',
+    textMuted: isDark ? '#6B7280' : '#9CA3AF',
+    border: isDark ? '#2D2D2D' : '#E5E7EB',
+    borderLight: isDark ? '#333333' : '#F3F4F6',
+    accent: '#2563EB',
+    accentLight: isDark ? 'rgba(37, 99, 235, 0.2)' : 'rgba(37, 99, 235, 0.1)',
+    success: '#10B981',
+    successLight: isDark ? 'rgba(16, 185, 129, 0.2)' : '#ECFDF5',
+    inputBg: isDark ? '#262626' : '#F9FAFB',
+    navbarBg: isDark ? '#1A1A1A' : '#FFFFFF',
+    placeholder: isDark ? '#6B7280' : '#9CA3AF',
+    modalBg: isDark ? '#1E1E1E' : '#FFFFFF',
+    modalBackdrop: isDark ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.5)',
+  };
 
   const toggleMeal = (meal: Meal) => {
     setSelectedMeals((prev) =>
@@ -111,6 +149,22 @@ export default function AddGuest() {
   const webCheckinValue = checkinDate ? formatDateTimeLocal(checkinDate) : "";
   const webCheckoutValue = checkoutDate ? formatDateTimeLocal(checkoutDate) : "";
   const webMinValue = formatDateTimeLocal(new Date());
+
+  // Fetch an available room on load to show in summary
+  useEffect(() => {
+    const fetchFirstRoom = async () => {
+      try {
+        const q = query(getUserRoomsRef(), where("status", "==", "available"));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+          setAvailableRoom(snapshot.docs[0].data());
+        }
+      } catch (err) {
+        console.error("Error fetching available room:", err);
+      }
+    };
+    fetchFirstRoom();
+  }, []);
 
   // Web-only styling for native datetime-local indicator
   useEffect(() => {
@@ -164,6 +218,7 @@ export default function AddGuest() {
           status: "available",
           guestName: null,
           guestMobile: null,
+          guestEmail: null,
           guestId: null,
           assignedAt: null,
           checkoutAt: null,
@@ -180,7 +235,7 @@ export default function AddGuest() {
 
   const createNewBooking = async (adminUid: string, currentUser: any) => {
     try {
-      const guestData = {
+      const guestData: any = {
         adminId: adminUid,
         adminEmail: currentUser.email,
         guestMobile: mobile,
@@ -193,6 +248,14 @@ export default function AddGuest() {
         checkoutAt: Timestamp.fromDate(checkoutDate!),
         mealPlan: selectedMeals,
       };
+
+      // Add optional fields only if they have values
+      if (email.trim()) {
+        guestData.guestEmail = email.trim();
+      }
+      if (aadharNumber.trim()) {
+        guestData.aadharNumber = aadharNumber.trim();
+      }
 
       const guestRef = await addDoc(collection(db, "guests"), guestData);
 
@@ -216,7 +279,7 @@ export default function AddGuest() {
         if (!roomSnap.exists()) throw "Room missing";
         if (roomSnap.data().status !== "available") throw "Room already occupied";
 
-        transaction.update(roomRef, {
+        const roomUpdateData: any = {
           status: "occupied",
           guestName: guestName.trim(),
           guestMobile: mobile,
@@ -225,7 +288,17 @@ export default function AddGuest() {
           guestId: guestRef.id,
           adminEmail: currentUser.email,
           mealPlan: selectedMeals,
-        });
+        };
+
+        // Add optional fields only if they have values
+        if (email.trim()) {
+          roomUpdateData.guestEmail = email.trim();
+        }
+        if (aadharNumber.trim()) {
+          roomUpdateData.guestAadhar = aadharNumber.trim();
+        }
+
+        transaction.update(roomRef, roomUpdateData);
 
         transaction.update(guestRef, {
           roomNumber: roomNumber,
@@ -234,25 +307,23 @@ export default function AddGuest() {
 
       setAssignedRoom(roomNumber);
 
-      const qrUrl = `https://roomio-guest.vercel.app/guest?admin=${encodeURIComponent(
-        adminUid
-      )}`;
+      // Build guest info message
+      let guestInfo = `Guest: ${guestName}\nMobile: ${mobile}`;
+      if (email.trim()) guestInfo += `\nEmail: ${email}`;
+      if (aadharNumber.trim()) guestInfo += `\nAadhar: ${aadharNumber}`;
+      guestInfo += `\nRoom: ${roomNumber}\nMeal: ${prettyMealText(selectedMeals)}`;
 
       Alert.alert(
         "✅ Guest Added Successfully!",
-        `Guest: ${guestName}\nMobile: ${mobile}\nRoom: ${roomNumber}\nMeal: ${prettyMealText(
-          selectedMeals
-        )}\n\nQR Code URL:\n${qrUrl}`,
+        guestInfo,
         [
-          {
-            text: "Copy URL to Console",
-            onPress: () => console.log("QR URL:", qrUrl),
-          },
           {
             text: "OK",
             onPress: () => {
               setGuestName("");
               setMobile("");
+              setEmail("");
+              setAadharNumber("");
               setCheckinDate(new Date());
               setCheckoutDate(null);
               setSelectedMeals([]);
@@ -351,7 +422,7 @@ export default function AddGuest() {
     });
   };
 
-  // ✅ ANDROID: show Date picker then Time picker (because "datetime" isn't reliable on Android)
+  // ✅ ANDROID: show Date picker then Time picker
   const openAndroidDateTimePicker = ({
     initial,
     minimumDate,
@@ -391,7 +462,7 @@ export default function AddGuest() {
     });
   };
 
-  // Web native input style (must be plain CSS-like object, not StyleSheet-only props)
+  // Web native input style
   const webNativeDateInputStyle: any = {
     flex: 1,
     minWidth: 0,
@@ -401,53 +472,44 @@ export default function AddGuest() {
     background: "transparent",
     padding: "16px 12px",
     fontSize: 15,
-    color: "#111827",
+    color: theme.text,
     fontWeight: 500,
     cursor: "pointer",
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.background} />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.container}
+        style={[styles.container, { backgroundColor: theme.background }]}
       >
-        <View style={styles.backgroundDecor}>
-          <View style={styles.bgCircle1} />
-          <View style={styles.bgCircle2} />
-          <View style={styles.bgCircle3} />
-          <LinearGradient
-            colors={["rgba(37,99,235,0.05)", "transparent"]}
-            style={styles.bgGradient}
-          />
-        </View>
-
-        {/* Header */}
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace("/(tabs)/rooms");
-              }
-            }}
-            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-            style={({ pressed }) => [
-              styles.backButton,
-              pressed && styles.backButtonPressed,
-              Platform.OS === "web" && { cursor: "pointer" as any },
-              Platform.OS === "web" && styles.backButtonHover,
-            ]}
-          >
-            <Ionicons name="arrow-back" size={20} color="#6B7280" />
-          </Pressable>
-          <View style={styles.headerContent}>
-            <Text style={styles.greeting}>Guest Management</Text>
-            <Text style={styles.title}>Add New Guest</Text>
+        {/* Global Navbar */}
+        <View style={[styles.navbar, { backgroundColor: theme.navbarBg, borderBottomColor: theme.borderLight }]}>
+          <View style={styles.navbarLeft}>
+            <View style={styles.logoContainer}>
+              <Ionicons name="business" size={24} color={theme.accent} />
+              <Text style={[styles.logoText, { color: theme.text }]}>Roomio</Text>
+            </View>
           </View>
-          <View style={styles.headerSpacer} />
+          <View style={styles.navbarRight}>
+            <View style={styles.breadcrumb}>
+              <Text style={[styles.breadcrumbItem, { color: theme.textSecondary }]}>Dashboard</Text>
+              <Ionicons name="chevron-forward" size={12} color={theme.textMuted} />
+              <Text style={[styles.breadcrumbItem, styles.breadcrumbActive, { color: theme.accent }]}>Add Guest</Text>
+            </View>
+            {/* Theme Toggle */}
+            <Pressable
+              onPress={() => setIsDark(!isDark)}
+              style={[styles.themeToggle, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            >
+              <Ionicons
+                name={isDark ? "sunny-outline" : "moon-outline"}
+                size={20}
+                color={theme.accent}
+              />
+            </Pressable>
+          </View>
         </View>
 
         <ScrollView
@@ -456,416 +518,383 @@ export default function AddGuest() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <View
-            style={[
-              styles.card,
-              Platform.OS === "web" && {
-                maxWidth: 680,
-                width: "100%",
-                alignSelf: "center",
-              },
-            ]}
-          >
-            {/* Card Header */}
-            <View style={styles.cardHeader}>
-              <View style={styles.iconContainer}>
-                <Ionicons name="person-add" size={24} color="#fff" />
-              </View>
-              <View>
-                <Text style={styles.cardTitle}>Check-in Guest</Text>
-                <Text style={styles.cardSubtitle}>
-                  Register guest and assign available room
-                </Text>
-              </View>
-            </View>
+          <View style={styles.pageHeader}>
+            <Text style={[styles.pageTitle, { color: theme.text }]}>Check-in Guest</Text>
+            <Text style={[styles.pageSubtitle, { color: theme.textSecondary }]}>
+              Verify identity and complete room assignment for arriving guests.
+            </Text>
+          </View>
 
-            <View style={styles.formSection}>
-              {/* Guest Name */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Guest Name</Text>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    isFocused.name && styles.inputFocused,
-                  ]}
-                >
-                  <View style={styles.inputIconContainer}>
-                    <Ionicons
-                      name="person-outline"
-                      size={18}
-                      color={isFocused.name ? "#2563EB" : "#9CA3AF"}
+          <View style={[styles.mainLayout, { flexDirection: isWide ? "row" : "column" }]}>
+            {/* Left Column */}
+            <View style={styles.formColumn}>
+              {/* Guest Details */}
+              <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <View style={styles.cardHeaderSmall}>
+                  <Ionicons name="person" size={18} color={theme.accent} />
+                  <Text style={[styles.cardTitleSmall, { color: theme.text }]}>Guest Details</Text>
+                </View>
+
+                <View style={styles.formSection}>
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.label, { color: theme.textSecondary }]}>Full Name *</Text>
+                    <TextInput
+                      placeholder="e.g. Alexander Mitchell"
+                      placeholderTextColor={theme.placeholder}
+                      style={[
+                        styles.formInput,
+                        {
+                          backgroundColor: theme.inputBg,
+                          borderColor: isFocused.name ? theme.accent : theme.border,
+                          color: theme.text,
+                        },
+                      ]}
+                      value={guestName}
+                      onChangeText={setGuestName}
+                      onFocus={() => setIsFocused(prev => ({ ...prev, name: true }))}
+                      onBlur={() => setIsFocused(prev => ({ ...prev, name: false }))}
                     />
                   </View>
-                  <TextInput
-                    placeholder="Enter guest name"
-                    placeholderTextColor="#9CA3AF"
-                    style={styles.input}
-                    value={guestName}
-                    onChangeText={setGuestName}
-                    onFocus={() =>
-                      setIsFocused((prev) => ({ ...prev, name: true }))
-                    }
-                    onBlur={() =>
-                      setIsFocused((prev) => ({ ...prev, name: false }))
-                    }
-                    autoCapitalize="words"
-                  />
-                </View>
-              </View>
 
-              {/* Mobile Number */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Mobile Number</Text>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    isFocused.mobile && styles.inputFocused,
-                  ]}
-                >
-                  <View style={styles.inputIconContainer}>
-                    <Ionicons
-                      name="call-outline"
-                      size={18}
-                      color={isFocused.mobile ? "#2563EB" : "#9CA3AF"}
-                    />
+                  <View style={styles.inputRow}>
+                    <View style={[styles.inputGroup, { flex: 1 }]}>
+                      <Text style={[styles.label, { color: theme.textSecondary }]}>Phone Number *</Text>
+                      <View style={[
+                        styles.iconInputWrapper,
+                        {
+                          backgroundColor: theme.inputBg,
+                          borderColor: isFocused.mobile ? theme.accent : theme.border,
+                        }
+                      ]}>
+                        <Ionicons name="call-outline" size={18} color={theme.textMuted} style={styles.inputIcon} />
+                        <TextInput
+                          placeholder="9876543210"
+                          placeholderTextColor={theme.placeholder}
+                          style={[styles.iconInput, { color: theme.text }]}
+                          value={mobile}
+                          onChangeText={setMobile}
+                          keyboardType="phone-pad"
+                          maxLength={10}
+                          onFocus={() => setIsFocused(prev => ({ ...prev, mobile: true }))}
+                          onBlur={() => setIsFocused(prev => ({ ...prev, mobile: false }))}
+                        />
+                      </View>
+                    </View>
+
+                    <View style={[styles.inputGroup, { flex: 1 }]}>
+                      <Text style={[styles.label, { color: theme.textSecondary }]}>Email (Optional)</Text>
+                      <View style={[
+                        styles.iconInputWrapper,
+                        {
+                          backgroundColor: theme.inputBg,
+                          borderColor: isFocused.email ? theme.accent : theme.border,
+                        }
+                      ]}>
+                        <Ionicons name="mail-outline" size={18} color={theme.textMuted} style={styles.inputIcon} />
+                        <TextInput
+                          placeholder="guest@email.com"
+                          placeholderTextColor={theme.placeholder}
+                          style={[styles.iconInput, { color: theme.text }]}
+                          value={email}
+                          onChangeText={setEmail}
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                          onFocus={() => setIsFocused(prev => ({ ...prev, email: true }))}
+                          onBlur={() => setIsFocused(prev => ({ ...prev, email: false }))}
+                        />
+                      </View>
+                    </View>
                   </View>
-                  <TextInput
-                    placeholder="10-digit mobile number"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="number-pad"
-                    maxLength={10}
-                    style={styles.input}
-                    value={mobile}
-                    onChangeText={(text) => {
-                      if (/^\d*$/.test(text)) setMobile(text);
-                    }}
-                    onFocus={() =>
-                      setIsFocused((prev) => ({ ...prev, mobile: true }))
-                    }
-                    onBlur={() =>
-                      setIsFocused((prev) => ({ ...prev, mobile: false }))
-                    }
-                  />
+
+                  {/* Aadhar Number - Optional */}
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.label, { color: theme.textSecondary }]}>Aadhar Number (Optional)</Text>
+                    <View style={[
+                      styles.iconInputWrapper,
+                      {
+                        backgroundColor: theme.inputBg,
+                        borderColor: isFocused.aadhar ? theme.accent : theme.border,
+                      }
+                    ]}>
+                      <Ionicons name="card-outline" size={18} color={theme.textMuted} style={styles.inputIcon} />
+                      <TextInput
+                        placeholder="1234 5678 9012"
+                        placeholderTextColor={theme.placeholder}
+                        style={[styles.iconInput, { color: theme.text }]}
+                        value={aadharNumber}
+                        onChangeText={setAadharNumber}
+                        keyboardType="number-pad"
+                        maxLength={14}
+                        onFocus={() => setIsFocused(prev => ({ ...prev, aadhar: true }))}
+                        onBlur={() => setIsFocused(prev => ({ ...prev, aadhar: false }))}
+                      />
+                    </View>
+                  </View>
                 </View>
               </View>
 
-              {/* Date Grid */}
-              <View style={[styles.dateGrid, { flexDirection: isWide ? "row" : "column" }]}>
-                {/* Check-in */}
-                <View style={styles.dateColumn}>
-                  <Text style={styles.label}>Check-in Date & Time</Text>
-
-                  {Platform.OS === "web" ? (
-                    <View
-                      style={[
-                        styles.datePicker,
-                        isFocused.checkin && styles.datePickerFocused,
-                      ]}
-                    >
-                      <View style={styles.inputIconContainer}>
-                        <Ionicons
-                          name="calendar-outline"
-                          size={18}
-                          color="#2563EB"
-                        />
-                      </View>
-
-                      {/* Native web input (this is what actually opens calendar/time popup) */}
-                      <input
-                        type="datetime-local"
-                        value={webCheckinValue}
-                        min={webMinValue}
-                        step={60}
-                        onChange={(e) => {
-                          const d = parseDateTimeLocal(e.target.value);
-                          if (d) {
-                            setCheckinDate(d);
-                            if (checkoutDate && d >= checkoutDate) {
-                              const newCheckout = new Date(d);
-                              newCheckout.setDate(newCheckout.getDate() + 1);
-                              setCheckoutDate(newCheckout);
-                            }
-                          }
-                        }}
-                        onFocus={() =>
-                          setIsFocused((prev) => ({ ...prev, checkin: true }))
-                        }
-                        onBlur={() =>
-                          setIsFocused((prev) => ({ ...prev, checkin: false }))
-                        }
-                        style={webNativeDateInputStyle}
-                      />
-                    </View>
-                  ) : (
-                    <Pressable
-                      style={[
-                        styles.datePicker,
-                        isFocused.checkin && styles.datePickerFocused,
-                      ]}
-                      onPress={() => {
-                        setIsFocused((prev) => ({ ...prev, checkin: true }));
-
-                        if (Platform.OS === "android") {
-                          openAndroidDateTimePicker({
-                            initial: checkinDate ?? new Date(),
-                            minimumDate: new Date(),
-                            onPicked: (d) => {
-                              setIsFocused((prev) => ({ ...prev, checkin: false }));
-                              setCheckinDate(d);
-                              if (checkoutDate && d >= checkoutDate) {
-                                const newCheckout = new Date(d);
-                                newCheckout.setDate(newCheckout.getDate() + 1);
-                                setCheckoutDate(newCheckout);
-                              }
-                            },
-                            onDone: () => {
-                              setIsFocused((prev) => ({ ...prev, checkin: false }));
-                            },
-                          });
-                          return;
-                        }
-
-                        // iOS: open modal picker
-                        setIosTempCheckin(checkinDate ?? new Date());
-                        setShowCheckinPicker(true);
-                      }}
-                    >
-                      <View style={styles.inputIconContainer}>
-                        <Ionicons
-                          name="calendar-outline"
-                          size={18}
-                          color="#2563EB"
-                        />
-                      </View>
-
-                      <Text
-                        style={[
-                          styles.dateText,
-                          !checkinDate && styles.datePlaceholder,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {formatDateDisplay(checkinDate)}
-                      </Text>
-
-                      <View style={styles.datePickerChevron}>
-                        <Ionicons
-                          name="chevron-down"
-                          size={16}
-                          color="#9CA3AF"
-                        />
-                      </View>
-                    </Pressable>
-                  )}
+              {/* Meal Plan Selection */}
+              <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <View style={styles.cardHeaderSmall}>
+                  <Ionicons name="restaurant" size={18} color={theme.accent} />
+                  <Text style={[styles.cardTitleSmall, { color: theme.text }]}>Meal Plan Selection</Text>
                 </View>
 
-                {/* Check-out */}
-                <View style={styles.dateColumn}>
-                  <Text style={styles.label}>Check-out Date & Time</Text>
-
-                  {Platform.OS === "web" ? (
-                    <View
-                      style={[
-                        styles.datePicker,
-                        isFocused.checkout && styles.datePickerFocused,
-                      ]}
-                    >
-                      <View style={styles.inputIconContainer}>
-                        <Ionicons name="exit-outline" size={18} color="#2563EB" />
-                      </View>
-
-                      <input
-                        type="datetime-local"
-                        value={webCheckoutValue}
-                        min={webCheckinValue || webMinValue}
-                        step={60}
-                        onChange={(e) => {
-                          const d = parseDateTimeLocal(e.target.value);
-                          if (d) setCheckoutDate(d);
-                        }}
-                        onFocus={() =>
-                          setIsFocused((prev) => ({ ...prev, checkout: true }))
-                        }
-                        onBlur={() =>
-                          setIsFocused((prev) => ({ ...prev, checkout: false }))
-                        }
-                        style={webNativeDateInputStyle}
-                      />
-                    </View>
-                  ) : (
-                    <Pressable
-                      style={[
-                        styles.datePicker,
-                        isFocused.checkout && styles.datePickerFocused,
-                      ]}
-                      onPress={() => {
-                        setIsFocused((prev) => ({ ...prev, checkout: true }));
-
-                        if (Platform.OS === "android") {
-                          openAndroidDateTimePicker({
-                            initial: checkoutDate ?? new Date(),
-                            minimumDate: checkinDate ?? new Date(),
-                            onPicked: (d) => {
-                              setIsFocused((prev) => ({ ...prev, checkout: false }));
-                              setCheckoutDate(d);
-                            },
-                            onDone: () => {
-                              setIsFocused((prev) => ({ ...prev, checkout: false }));
-                            },
-                          });
-                          return;
-                        }
-
-                        // iOS: open modal picker
-                        setIosTempCheckout(checkoutDate ?? new Date());
-                        setShowCheckoutPicker(true);
-                      }}
-                    >
-                      <View style={styles.inputIconContainer}>
-                        <Ionicons name="exit-outline" size={18} color="#2563EB" />
-                      </View>
-
-                      <Text
-                        style={[
-                          styles.dateText,
-                          !checkoutDate && styles.datePlaceholder,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {formatDateDisplay(checkoutDate)}
-                      </Text>
-
-                      <View style={styles.datePickerChevron}>
-                        <Ionicons
-                          name="chevron-down"
-                          size={16}
-                          color="#9CA3AF"
-                        />
-                      </View>
-                    </Pressable>
-                  )}
-                </View>
-              </View>
-
-              {/* Meal Selection */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Meal Plan</Text>
-                <View style={styles.mealRow}>
-                  {(["breakfast", "lunch", "dinner"] as Meal[]).map((meal) => {
+                <View style={styles.mealGrid}>
+                  {["breakfast", "lunch", "dinner"].map((meal: any) => {
                     const isSelected = selectedMeals.includes(meal);
-                    const emoji =
-                      meal === "breakfast"
-                        ? "🍳"
-                        : meal === "lunch"
-                          ? "🍱"
-                          : "🍽️";
-                    const label = meal.charAt(0).toUpperCase() + meal.slice(1);
-
+                    const emoji = meal === "breakfast" ? "🍳" : meal === "lunch" ? "🍱" : "🍽️";
                     return (
                       <Pressable
                         key={meal}
                         onPress={() => toggleMeal(meal)}
-                        style={({ pressed }) => [
-                          styles.mealCircle,
-                          isSelected && styles.mealCircleSelected,
-                          pressed && styles.mealCirclePressed,
-                          Platform.OS === "web" &&
-                          isSelected && { transform: [{ translateY: -2 }] },
+                        style={[
+                          styles.mealPill,
+                          {
+                            backgroundColor: theme.surface,
+                            borderColor: isSelected ? theme.accent : theme.border,
+                          },
+                          isSelected && styles.mealPillActive,
                         ]}
                       >
-                        <View style={styles.mealContent}>
-                          <Text style={styles.mealEmoji}>{emoji}</Text>
-                          <Text
-                            style={[
-                              styles.mealLabel,
-                              isSelected && styles.mealLabelSelected,
-                            ]}
-                          >
-                            {label}
-                          </Text>
-                        </View>
-
-                        {isSelected && (
-                          <View style={styles.mealCheckmark}>
-                            <Ionicons name="checkmark" size={12} color="#fff" />
-                          </View>
-                        )}
+                        <Text style={styles.mealEmoji}>{emoji}</Text>
+                        <Text
+                          style={[
+                            styles.mealPillText,
+                            { color: isSelected ? theme.accent : theme.textSecondary },
+                          ]}
+                        >
+                          {meal.charAt(0).toUpperCase() + meal.slice(1)}
+                        </Text>
                       </Pressable>
                     );
                   })}
                 </View>
               </View>
 
-              {/* QR Info */}
-              <View style={styles.qrInfo}>
-                <View style={styles.qrIcon}>
-                  <Ionicons name="qr-code" size={18} color="#2563EB" />
+              {/* Stay Details */}
+              <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <View style={styles.cardHeaderSmall}>
+                  <Ionicons name="calendar" size={18} color={theme.accent} />
+                  <Text style={[styles.cardTitleSmall, { color: theme.text }]}>Stay Details</Text>
                 </View>
-                <View style={styles.qrContent}>
-                  <Text style={styles.qrTitle}>QR Access Generated</Text>
-                  <Text style={styles.qrSubtitle}>
-                    Guest can scan QR to access web services
-                  </Text>
+
+                <View style={styles.dateRow}>
+                  {/* Check-in */}
+                  <View style={[styles.dateColumn, { flex: 1 }]}>
+                    <Text style={[styles.label, { color: theme.textSecondary }]}>Check-in *</Text>
+                    {Platform.OS === "web" ? (
+                      <View style={[
+                        styles.datePickerWeb,
+                        {
+                          backgroundColor: theme.inputBg,
+                          borderColor: isFocused.checkin ? theme.accent : theme.border,
+                        }
+                      ]}>
+                        <Ionicons name="calendar-outline" size={18} color={theme.textMuted} style={styles.dateIcon} />
+                        <input
+                          type="datetime-local"
+                          value={webCheckinValue}
+                          min={webMinValue}
+                          step={60}
+                          onChange={(e: any) => {
+                            const d = parseDateTimeLocal(e.target.value);
+                            if (d) {
+                              setCheckinDate(d);
+                              if (checkoutDate && d >= checkoutDate) {
+                                const next = new Date(d);
+                                next.setDate(next.getDate() + 1);
+                                setCheckoutDate(next);
+                              }
+                            }
+                          }}
+                          onFocus={() => setIsFocused(prev => ({ ...prev, checkin: true }))}
+                          onBlur={() => setIsFocused(prev => ({ ...prev, checkin: false }))}
+                          style={{
+                            ...webNativeDateInputStyle,
+                            color: theme.text,
+                          }}
+                        />
+                      </View>
+                    ) : (
+                      <Pressable
+                        style={[
+                          styles.datePickerNative,
+                          {
+                            backgroundColor: theme.inputBg,
+                            borderColor: isFocused.checkin ? theme.accent : theme.border,
+                          }
+                        ]}
+                        onPress={() => {
+                          if (Platform.OS === "android") {
+                            openAndroidDateTimePicker({
+                              initial: checkinDate ?? new Date(),
+                              minimumDate: new Date(),
+                              onPicked: (d) => {
+                                setCheckinDate(d);
+                                if (checkoutDate && d >= checkoutDate) {
+                                  const next = new Date(d);
+                                  next.setDate(next.getDate() + 1);
+                                  setCheckoutDate(next);
+                                }
+                              },
+                            });
+                          } else {
+                            setIosTempCheckin(checkinDate ?? new Date());
+                            setShowCheckinPicker(true);
+                          }
+                          setIsFocused(prev => ({ ...prev, checkin: true }));
+                        }}
+                      >
+                        <Ionicons name="calendar-outline" size={18} color={theme.textMuted} style={styles.dateIcon} />
+                        <Text style={[styles.dateText, { color: theme.text }]} numberOfLines={1}>
+                          {formatDateDisplay(checkinDate)}
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
+
+                  {/* Check-out */}
+                  <View style={[styles.dateColumn, { flex: 1 }]}>
+                    <Text style={[styles.label, { color: theme.textSecondary }]}>Check-out *</Text>
+                    {Platform.OS === "web" ? (
+                      <View style={[
+                        styles.datePickerWeb,
+                        {
+                          backgroundColor: theme.inputBg,
+                          borderColor: isFocused.checkout ? theme.accent : theme.border,
+                        }
+                      ]}>
+                        <Ionicons name="calendar-outline" size={18} color={theme.textMuted} style={styles.dateIcon} />
+                        <input
+                          type="datetime-local"
+                          value={webCheckoutValue}
+                          min={webCheckinValue || webMinValue}
+                          step={60}
+                          onChange={(e: any) => {
+                            const d = parseDateTimeLocal(e.target.value);
+                            if (d) setCheckoutDate(d);
+                          }}
+                          onFocus={() => setIsFocused(prev => ({ ...prev, checkout: true }))}
+                          onBlur={() => setIsFocused(prev => ({ ...prev, checkout: false }))}
+                          style={{
+                            ...webNativeDateInputStyle,
+                            color: theme.text,
+                          }}
+                        />
+                      </View>
+                    ) : (
+                      <Pressable
+                        style={[
+                          styles.datePickerNative,
+                          {
+                            backgroundColor: theme.inputBg,
+                            borderColor: isFocused.checkout ? theme.accent : theme.border,
+                          }
+                        ]}
+                        onPress={() => {
+                          if (Platform.OS === "android") {
+                            openAndroidDateTimePicker({
+                              initial: checkoutDate ?? new Date(),
+                              minimumDate: checkinDate ?? new Date(),
+                              onPicked: (d) => setCheckoutDate(d),
+                            });
+                          } else {
+                            setIosTempCheckout(checkoutDate ?? new Date());
+                            setShowCheckoutPicker(true);
+                          }
+                          setIsFocused(prev => ({ ...prev, checkout: true }));
+                        }}
+                      >
+                        <Ionicons name="calendar-outline" size={18} color={theme.textMuted} style={styles.dateIcon} />
+                        <Text style={[styles.dateText, { color: theme.text }]} numberOfLines={1}>
+                          {formatDateDisplay(checkoutDate)}
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
                 </View>
               </View>
+            </View>
 
-              {/* Success Message */}
-              {assignedRoom && (
-                <View style={styles.successContainer}>
-                  <View style={styles.successIcon}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={18}
-                      color="#16A34A"
-                    />
+            {/* Right Column / Sidebar */}
+            <View style={styles.sidebarColumn}>
+              <View style={[styles.sidebarCard, { backgroundColor: theme.card, borderColor: theme.accent }]}>
+                <View style={styles.sidebarHeader}>
+                  <Text style={[styles.sidebarTitle, { color: theme.text }]}>BOOKING SUMMARY</Text>
+                  <Text style={[styles.sidebarId, { color: theme.textSecondary }]}>ID: NEW-BOOKING</Text>
+                </View>
+
+                <View style={styles.summaryItem}>
+                  <View style={styles.summaryLabelBox}>
+                    <Text style={[styles.summaryLabel, { color: theme.textMuted }]}>ROOM</Text>
+                    <Text style={[styles.summaryValue, { color: theme.text }]}>
+                      {availableRoom?.roomNumber || "Assigning..."}
+                    </Text>
                   </View>
-                  <View style={styles.successContent}>
-                    <Text style={styles.successTitle}>Room Assigned!</Text>
-                    <Text style={styles.successSubtitle}>
-                      Room {assignedRoom} is now occupied
+                  <View style={styles.summaryLabelBox}>
+                    <Text style={[styles.summaryLabel, { color: theme.textMuted, textAlign: 'right' }]}>STAY</Text>
+                    <Text style={[styles.summaryValue, { color: theme.text, textAlign: 'right' }]}>
+                      {checkinDate && checkoutDate
+                        ? Math.ceil((checkoutDate.getTime() - checkinDate.getTime()) / (1000 * 3600 * 24))
+                        : 1}
+                      <Text style={[styles.summarySub, { color: theme.textSecondary }]}> Nights</Text>
                     </Text>
                   </View>
                 </View>
-              )}
 
-              {/* Submit Button */}
-              <Pressable
-                style={({ pressed }) => [
-                  styles.button,
-                  styles.buttonPrimary,
-                  loading && styles.buttonDisabled,
-                  pressed && !loading && styles.buttonPressed,
-                ]}
-                onPress={assignRoom}
-                disabled={loading}
-              >
-                {loading ? (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator color="#fff" size="small" />
-                    <Text style={styles.buttonText}>Adding Guest...</Text>
-                  </View>
-                ) : (
-                  <View style={styles.buttonContent}>
-                    <Ionicons name="person-add" size={18} color="#fff" />
-                    <Text style={styles.buttonText}>
-                      Add Guest & Assign Room
+                <View style={[styles.summaryDivider, { backgroundColor: theme.border }]} />
+
+                <View style={styles.guestInfoSummary}>
+                  <Text style={[styles.guestInfoLabel, { color: theme.textSecondary }]}>Guest</Text>
+                  <Text style={[styles.guestInfoValue, { color: theme.text }]} numberOfLines={1}>
+                    {guestName || "Not entered"}
+                  </Text>
+                  <Text style={[styles.guestInfoValueSmall, { color: theme.textSecondary }]} numberOfLines={1}>
+                    {mobile || "No phone"}
+                  </Text>
+                  {email ? (
+                    <Text style={[styles.guestInfoValueSmall, { color: theme.textSecondary, marginTop: 4 }]} numberOfLines={1}>
+                      {email}
                     </Text>
-                    <Ionicons name="arrow-forward" size={18} color="#fff" />
-                  </View>
-                )}
-              </Pressable>
+                  ) : null}
+                </View>
+
+                <View style={styles.mealSummary}>
+                  <Text style={[styles.guestInfoLabel, { color: theme.textSecondary }]}>Meal Plan</Text>
+                  <Text style={[styles.guestInfoValue, { color: theme.text }]}>
+                    {prettyMealText(selectedMeals) || "None selected"}
+                  </Text>
+                </View>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.completeBtn,
+                    { backgroundColor: theme.accent },
+                    pressed && styles.completeBtnPressed,
+                  ]}
+                  onPress={assignRoom}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="key" size={20} color="#fff" />
+                      <Text style={styles.completeBtnText}>COMPLETE CHECK-IN</Text>
+                    </>
+                  )}
+                </Pressable>
+
+                <Text style={[styles.termsText, { color: theme.textMuted }]}>
+                  By clicking complete, you confirm guest verification and room readiness.
+                </Text>
+              </View>
             </View>
           </View>
         </ScrollView>
 
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Each admin's guests & rooms stay fully isolated
-          </Text>
-        </View>
-
-        {/* ✅ iOS CHECK-IN Modal (Calendar + Time Spinner) */}
+        {/* ✅ iOS CHECK-IN Modal */}
         {Platform.OS === "ios" && (
           <Modal
             visible={showCheckinPicker}
@@ -877,13 +906,13 @@ export default function AddGuest() {
             }}
           >
             <Pressable
-              style={styles.modalBackdrop}
+              style={[styles.modalBackdrop, { backgroundColor: theme.modalBackdrop }]}
               onPress={() => {
                 setShowCheckinPicker(false);
                 setIsFocused((prev) => ({ ...prev, checkin: false }));
               }}
             />
-            <View style={styles.modalSheet}>
+            <View style={[styles.modalSheet, { backgroundColor: theme.modalBg }]}>
               <View style={styles.modalHeader}>
                 <Pressable
                   onPress={() => {
@@ -891,18 +920,16 @@ export default function AddGuest() {
                     setIsFocused((prev) => ({ ...prev, checkin: false }));
                   }}
                 >
-                  <Text style={styles.modalAction}>Cancel</Text>
+                  <Text style={[styles.modalAction, { color: theme.textSecondary }]}>Cancel</Text>
                 </Pressable>
 
-                <Text style={styles.modalTitle}>Select Check-in</Text>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>Select Check-in</Text>
 
                 <Pressable
                   onPress={() => {
                     setShowCheckinPicker(false);
                     setIsFocused((prev) => ({ ...prev, checkin: false }));
-
                     setCheckinDate(iosTempCheckin);
-
                     if (checkoutDate && iosTempCheckin >= checkoutDate) {
                       const newCheckout = new Date(iosTempCheckin);
                       newCheckout.setDate(newCheckout.getDate() + 1);
@@ -910,7 +937,7 @@ export default function AddGuest() {
                     }
                   }}
                 >
-                  <Text style={[styles.modalAction, styles.modalActionPrimary]}>
+                  <Text style={[styles.modalAction, styles.modalActionPrimary, { color: theme.accent }]}>
                     Done
                   </Text>
                 </Pressable>
@@ -929,7 +956,7 @@ export default function AddGuest() {
           </Modal>
         )}
 
-        {/* ✅ iOS CHECK-OUT Modal (Calendar + Time Spinner) */}
+        {/* ✅ iOS CHECK-OUT Modal */}
         {Platform.OS === "ios" && (
           <Modal
             visible={showCheckoutPicker}
@@ -941,13 +968,13 @@ export default function AddGuest() {
             }}
           >
             <Pressable
-              style={styles.modalBackdrop}
+              style={[styles.modalBackdrop, { backgroundColor: theme.modalBackdrop }]}
               onPress={() => {
                 setShowCheckoutPicker(false);
                 setIsFocused((prev) => ({ ...prev, checkout: false }));
               }}
             />
-            <View style={styles.modalSheet}>
+            <View style={[styles.modalSheet, { backgroundColor: theme.modalBg }]}>
               <View style={styles.modalHeader}>
                 <Pressable
                   onPress={() => {
@@ -955,10 +982,10 @@ export default function AddGuest() {
                     setIsFocused((prev) => ({ ...prev, checkout: false }));
                   }}
                 >
-                  <Text style={styles.modalAction}>Cancel</Text>
+                  <Text style={[styles.modalAction, { color: theme.textSecondary }]}>Cancel</Text>
                 </Pressable>
 
-                <Text style={styles.modalTitle}>Select Check-out</Text>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>Select Check-out</Text>
 
                 <Pressable
                   onPress={() => {
@@ -967,7 +994,7 @@ export default function AddGuest() {
                     setCheckoutDate(iosTempCheckout);
                   }}
                 >
-                  <Text style={[styles.modalAction, styles.modalActionPrimary]}>
+                  <Text style={[styles.modalAction, styles.modalActionPrimary, { color: theme.accent }]}>
                     Done
                   </Text>
                 </Pressable>
@@ -990,475 +1017,171 @@ export default function AddGuest() {
   );
 }
 
-// ✨ Styles
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-  },
-  container: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-  },
-  backgroundDecor: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    overflow: "hidden",
-    pointerEvents: "none",
-  },
-  bgGradient: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: "40%",
-  },
-  bgCircle1: {
-    position: "absolute",
-    top: -100,
-    right: -80,
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: "rgba(37, 99, 235, 0.07)",
-  },
-  bgCircle2: {
-    position: "absolute",
-    top: "40%",
-    left: -130,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: "rgba(37, 99, 235, 0.05)",
-  },
-  bgCircle3: {
-    position: "absolute",
-    bottom: -70,
-    right: -60,
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    backgroundColor: "rgba(37, 99, 235, 0.04)",
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 24,
-  },
+  safe: { flex: 1 },
+  container: { flex: 1 },
+  scroll: { flex: 1 },
+  scrollContent: { paddingBottom: 40 },
 
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: "#FFF",
+  navbar: {
+    height: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,0,0,0.06)",
-    zIndex: 10,
   },
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#F3F4F6",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  backButtonPressed: {
-    backgroundColor: "#E5E7EB",
-    transform: [{ scale: 0.96 }],
-  },
-  backButtonHover: {},
-  headerContent: {
-    flex: 1,
-    alignItems: "center",
-    paddingHorizontal: 8,
-  },
-  headerSpacer: {
-    width: 42,
-  },
-  greeting: {
-    color: "#6B7280",
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  title: {
-    fontSize: 19,
-    fontWeight: "800",
-    color: "#111827",
-    letterSpacing: -0.3,
-  },
+  navbarLeft: { flexDirection: 'row', alignItems: 'center' },
+  logoContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  logoText: { fontSize: 20, fontWeight: '800' },
+  navbarRight: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  breadcrumb: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  breadcrumbItem: { fontSize: 13, fontWeight: '500' },
+  breadcrumbActive: { fontWeight: '600' },
+  themeToggle: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+
+  pageHeader: { paddingHorizontal: 20, paddingTop: 32, marginBottom: 32 },
+  pageTitle: { fontSize: 32, fontWeight: '800', marginBottom: 8 },
+  pageSubtitle: { fontSize: 16, lineHeight: 24 },
+
+  mainLayout: { paddingHorizontal: 20, gap: 24 },
+  formColumn: { flex: 2, gap: 24 },
+  sidebarColumn: { flex: 1, gap: 24 },
 
   card: {
-    backgroundColor: "#FFF",
-    borderRadius: 24,
-    margin: 16,
+    borderRadius: 16,
     padding: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.09,
-    shadowRadius: 24,
-    elevation: 10,
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.04)",
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 28,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,0,0,0.05)",
+  cardHeaderSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 24,
   },
-  iconContainer: {
-    width: 52,
+  cardTitleSmall: { fontSize: 16, fontWeight: '700' },
+
+  formSection: { gap: 20 },
+  inputGroup: { gap: 8 },
+  label: { fontSize: 14, fontWeight: '600' },
+  formInput: {
     height: 52,
-    borderRadius: 26,
-    backgroundColor: "#2563EB",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 16,
-    shadowColor: "#2563EB",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 6,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    fontSize: 15,
+    borderWidth: 1,
   },
-  cardTitle: {
-    fontSize: 21,
-    fontWeight: "800",
-    color: "#111827",
-    letterSpacing: -0.3,
+  inputRow: { flexDirection: 'row', gap: 16 },
+  iconInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
   },
-  cardSubtitle: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginTop: 4,
-    lineHeight: 20,
+  inputIcon: { marginLeft: 16 },
+  iconInput: {
+    flex: 1,
+    height: 52,
+    paddingHorizontal: 12,
+    fontSize: 15,
   },
 
-  formSection: {
-    gap: 20,
+  mealGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  mealPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 30,
+    borderWidth: 1,
+    gap: 8,
   },
-  inputGroup: {
-    gap: 10,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#374151",
-    letterSpacing: 0.2,
-    marginLeft: 2,
-  },
-  inputWrapper: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F9FAFB",
-    borderRadius: 14,
+  mealPillActive: {
     borderWidth: 2,
-    borderColor: "#E5E7EB",
-    overflow: "hidden",
   },
-  inputFocused: {
-    borderColor: "#2563EB",
-    backgroundColor: "#FFFFFF",
-    shadowColor: "#2563EB",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  inputIconContainer: {
-    width: 48,
-    height: 52,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(37, 99, 235, 0.06)",
-    borderRightWidth: 1,
-    borderRightColor: "#E5E7EB",
-  },
-  input: {
-    flex: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 14,
-    fontSize: 16,
-    color: "#111827",
-    fontWeight: "500",
-  },
+  mealEmoji: { fontSize: 16 },
+  mealPillText: { fontSize: 14, fontWeight: '600' },
 
-  dateGrid: {
-    gap: 14,
+  dateRow: { flexDirection: 'row', gap: 16 },
+  dateColumn: { gap: 8 },
+  datePickerWeb: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    height: 52,
   },
-  dateColumn: {
-    flex: 1,
-    gap: 10,
+  datePickerNative: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    height: 52,
   },
-  datePicker: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F9FAFB",
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: "#E5E7EB",
-    overflow: "hidden",
-    minHeight: 52,
-  },
-  datePickerFocused: {
-    borderColor: "#2563EB",
-    backgroundColor: "#FFFFFF",
-    shadowColor: "#2563EB",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 3,
-  },
+  dateIcon: { marginLeft: 12 },
   dateText: {
     flex: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 14,
     fontSize: 15,
-    color: "#111827",
-    fontWeight: "500",
-  },
-  datePlaceholder: {
-    color: "#9CA3AF",
-  },
-  datePickerChevron: {
-    padding: 16,
-    paddingRight: 18,
+    fontWeight: '500',
+    paddingHorizontal: 12,
   },
 
-  mealRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  mealCircle: {
-    flex: 1,
-    aspectRatio: 1,
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
+  sidebarCard: {
+    borderRadius: 20,
+    padding: 24,
     borderWidth: 2,
-    borderColor: "#E5E7EB",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 3,
-    position: "relative",
-    overflow: "hidden",
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 8,
   },
-  mealCirclePressed: {
-    transform: [{ scale: 0.97 }],
-    opacity: 0.95,
+  sidebarHeader: { marginBottom: 24 },
+  sidebarTitle: { fontSize: 18, fontWeight: '900', letterSpacing: 0.5 },
+  sidebarId: { fontSize: 12, marginTop: 4, fontWeight: '600' },
+  summaryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
-  mealCircleSelected: {
-    backgroundColor: "#2563EB",
-    borderColor: "#2563EB",
-    shadowColor: "#2563EB",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 14,
-    elevation: 6,
-  },
-  mealContent: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  mealEmoji: {
-    fontSize: 26,
-    marginBottom: 6,
-  },
-  mealLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#4B5563",
-    textAlign: "center",
-    letterSpacing: 0.3,
-  },
-  mealLabelSelected: {
-    color: "#FFFFFF",
-  },
-  mealCheckmark: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#16A34A",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  summaryLabelBox: { gap: 4 },
+  summaryLabel: { fontSize: 11, fontWeight: '800' },
+  summaryValue: { fontSize: 24, fontWeight: '900' },
+  summarySub: { fontSize: 13, fontWeight: '600' },
+  summaryDivider: { height: 1, marginVertical: 16 },
 
-  qrInfo: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    backgroundColor: "rgba(37,99,235,0.08)",
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(37,99,235,0.15)",
-  },
-  qrIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(37,99,235,0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-    flexShrink: 0,
-  },
-  qrContent: {
-    flex: 1,
-  },
-  qrTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#2563EB",
-    marginBottom: 2,
-  },
-  qrSubtitle: {
-    fontSize: 12,
-    color: "#6B7280",
-    lineHeight: 18,
-  },
+  guestInfoSummary: { marginBottom: 16 },
+  guestInfoLabel: { fontSize: 12, fontWeight: '700', marginBottom: 4 },
+  guestInfoValue: { fontSize: 18, fontWeight: '800', marginBottom: 2 },
+  guestInfoValueSmall: { fontSize: 14, fontWeight: '600' },
+  mealSummary: { marginBottom: 24 },
 
-  successContainer: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    backgroundColor: "rgba(22,163,74,0.08)",
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(22,163,74,0.15)",
-  },
-  successIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(22,163,74,0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-    flexShrink: 0,
-  },
-  successContent: {
-    flex: 1,
-  },
-  successTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#16A34A",
-    marginBottom: 2,
-  },
-  successSubtitle: {
-    fontSize: 12,
-    color: "#16A34A",
-    lineHeight: 18,
-  },
-
-  button: {
+  completeBtn: {
     height: 56,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 4,
-    overflow: "hidden",
-    position: "relative",
-  },
-  buttonPrimary: {
-    backgroundColor: "#2563EB",
-    shadowColor: "#2563EB",
-    shadowOffset: { width: 0, height: 5 },
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 14,
-    elevation: 9,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  buttonPressed: {
-    backgroundColor: "#1D4ED8",
-    transform: [{ scale: 0.98 }],
-  },
-  buttonDisabled: {
-    opacity: 0.75,
-  },
-  buttonContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    zIndex: 2,
-  },
-  loadingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 0.2,
-  },
+  completeBtnPressed: { transform: [{ scale: 0.98 }] },
+  completeBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  termsText: { fontSize: 11, textAlign: 'center', marginTop: 16, lineHeight: 16 },
 
-  footer: {
-    paddingHorizontal: 16,
-    paddingVertical: 24,
-    alignItems: "center",
-    backgroundColor: "#F9FAFB",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(0,0,0,0.05)",
-  },
-  footerText: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    textAlign: "center",
-    lineHeight: 18,
-    fontWeight: "500",
-  },
-
-  // iOS Modal Picker UI
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(17, 24, 39, 0.35)",
-  },
-  modalSheet: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    paddingBottom: 24,
-    paddingTop: 12,
-  },
-  modalHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,0,0,0.06)",
-  },
-  modalTitle: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#111827",
-  },
-  modalAction: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#6B7280",
-  },
-  modalActionPrimary: {
-    color: "#2563EB",
-  },
+  modalBackdrop: { flex: 1 },
+  modalSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 18, fontWeight: '800' },
+  modalAction: { fontSize: 16, fontWeight: '700' },
+  modalActionPrimary: { fontWeight: '900' },
 });

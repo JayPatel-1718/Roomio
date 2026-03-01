@@ -488,13 +488,6 @@ export default function Dashboard() {
                   <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={20} color={theme.textMain} />
                 </Pressable>
 
-                <Pressable style={[styles.headerToolBtn, { borderColor: theme.glassBorder }]}>
-                  <Ionicons name="notifications-outline" size={20} color={theme.textMain} />
-                  {requests.length + orders.length > 0 && (
-                    <View style={[styles.headerBadge, { backgroundColor: theme.danger }]} />
-                  )}
-                </Pressable>
-
                 {isWide && <View style={[styles.headerDivider, { backgroundColor: theme.glassBorder }]} />}
 
                 <Pressable
