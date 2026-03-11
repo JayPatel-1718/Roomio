@@ -52,14 +52,14 @@ const formatRoomNumber = (num: number): string => {
 export default function AddGuest() {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const { theme: globalThemeName, setMode, mode: themeMode } = useTheme();
-  const [isDark, setIsDark] = useState(globalThemeName === 'dark');
+  const { theme: activeTheme, colors: theme, setMode } = useTheme();
+  const isDark = activeTheme === 'dark';
   const isWide = width >= 820;
 
-  // Sync with global theme
-  useEffect(() => {
-    setIsDark(globalThemeName === 'dark');
-  }, [globalThemeName]);
+  // Add derived theme properties that might be missing in context
+  const inputBg = isDark ? '#262626' : '#F9FAFB';
+  const placeholder = theme.textMuted;
+  const modalBackdrop = isDark ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.5)';
 
   const [guestName, setGuestName] = useState("");
   const [aadharNumber, setAadharNumber] = useState("");
@@ -104,50 +104,6 @@ export default function AddGuest() {
     checkout: false
   });
 
-  // Theme colors - matching your rooms.tsx theme exactly
-  const theme = isDark ? {
-    bgMain: '#010409',
-    bgCard: 'rgba(13, 17, 23, 0.6)',
-    bgNav: 'rgba(1, 4, 9, 0.8)',
-    textMain: '#f0f6fc',
-    textMuted: '#8b949e',
-    glass: 'rgba(255, 255, 255, 0.03)',
-    glassBorder: 'rgba(255, 255, 255, 0.1)',
-    shadow: 'rgba(0, 0, 0, 0.6)',
-    primary: '#2563eb',
-    primaryHover: '#1d4ed8',
-    primaryGlow: 'rgba(37, 99, 235, 0.35)',
-    accent: '#38bdf8',
-    success: '#22c55e',
-    warning: '#f59e0b',
-    danger: '#ef4444',
-    inputBg: '#262626',
-    navbarBg: '#1A1A1A',
-    placeholder: '#6B7280',
-    modalBg: '#1E1E1E',
-    modalBackdrop: 'rgba(0,0,0,0.7)',
-  } : {
-    bgMain: '#f8fafc',
-    bgCard: '#ffffff',
-    bgNav: 'rgba(248, 250, 252, 0.9)',
-    textMain: '#0f172a',
-    textMuted: '#64748b',
-    glass: 'rgba(37, 99, 235, 0.04)',
-    glassBorder: 'rgba(37, 99, 235, 0.12)',
-    shadow: 'rgba(37, 99, 235, 0.15)',
-    primary: '#2563eb',
-    primaryHover: '#1d4ed8',
-    primaryGlow: 'rgba(37, 99, 235, 0.25)',
-    accent: '#0ea5e9',
-    success: '#16a34a',
-    warning: '#f59e0b',
-    danger: '#dc2626',
-    inputBg: '#F9FAFB',
-    navbarBg: '#FFFFFF',
-    placeholder: '#9CA3AF',
-    modalBg: '#FFFFFF',
-    modalBackdrop: 'rgba(0,0,0,0.5)',
-  };
 
   const toggleMeal = (meal: Meal) => {
     setSelectedMeals((prev) =>
@@ -616,7 +572,13 @@ export default function AddGuest() {
         <View style={[styles.navbar, { backgroundColor: theme.bgNav, borderBottomColor: theme.glassBorder }]}>
           <View style={styles.navbarLeft}>
             <Pressable
-              onPress={() => router.back()}
+              onPress={() => {
+                if (router.canGoBack()) {
+                  router.back();
+                } else {
+                  router.replace("/(tabs)/rooms");
+                }
+              }}
               style={[styles.backButton, { backgroundColor: theme.glass, borderColor: theme.glassBorder }]}
             >
               <Ionicons name="arrow-back" size={20} color={theme.textMain} />
