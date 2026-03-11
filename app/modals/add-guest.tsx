@@ -213,15 +213,25 @@ export default function AddGuest() {
         })).sort((a: any, b: any) => (Number(a.roomNumber) || 0) - (Number(b.roomNumber) || 0));
 
         setAvailableRooms(rooms);
-        // The first room in the sorted list is the next available (lowest number)
-        const firstRoom = rooms[0];
-        setNextAvailableRoom(firstRoom);
+
+        // Implement Random Assignment: Filter rooms 1-10 for preference
+        const preferredPool = rooms.filter(r => {
+          const num = Number(r.roomNumber);
+          return num >= 1 && num <= 10;
+        });
+
+        // Use preferredPool if available, else use all available rooms
+        const selectionPool = preferredPool.length > 0 ? preferredPool : rooms;
+        const randomIndex = Math.floor(Math.random() * selectionPool.length);
+        const randomChoice = selectionPool[randomIndex];
+
+        setNextAvailableRoom(randomChoice);
 
         // Only auto-select if no room is selected or the selected room is no longer available
         setSelectedRoom((prev: any) => {
-          if (!prev) return firstRoom;
+          if (!prev) return randomChoice;
           const found = rooms.find(r => r.id === prev.id);
-          return found || firstRoom;
+          return found || randomChoice;
         });
       } else {
         setAvailableRooms([]);
@@ -525,6 +535,19 @@ export default function AddGuest() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const randomizeRoom = () => {
+    if (availableRooms.length === 0) return;
+
+    const preferredPool = availableRooms.filter(r => {
+      const num = Number(r.roomNumber);
+      return num >= 1 && num <= 10;
+    });
+
+    const selectionPool = preferredPool.length > 0 ? preferredPool : availableRooms;
+    const randomIndex = Math.floor(Math.random() * selectionPool.length);
+    setSelectedRoom(selectionPool[randomIndex]);
   };
 
   // ✅ ANDROID: show Date picker then Time picker
@@ -938,28 +961,47 @@ export default function AddGuest() {
 
                 <View style={styles.summaryItem}>
                   <View style={[styles.summaryLabelBox, { flex: 1 }]}>
-                    <Text style={[styles.summaryLabel, { color: theme.textMuted }]}>ROOM</Text>
+                    <View style={styles.summaryTitleRow}>
+                      <Text style={[styles.summaryLabel, { color: theme.textMuted }]}>ROOM ASSIGNMENT</Text>
+                      {availableRooms.length > 1 && (
+                        <Pressable onPress={randomizeRoom} style={styles.randomizeMiniBtn}>
+                          <Ionicons name="shuffle" size={14} color={theme.primary} />
+                          <Text style={[styles.randomizeMiniText, { color: theme.primary }]}>Randomize</Text>
+                        </Pressable>
+                      )}
+                    </View>
                     <Pressable
                       onPress={() => availableRooms.length > 0 && setShowRoomPicker(true)}
                       style={[
                         styles.roomSelectorTrigger,
-                        { borderColor: theme.glassBorder, backgroundColor: theme.glass }
+                        { borderColor: selectedRoom ? theme.primary : theme.glassBorder, backgroundColor: theme.glass }
                       ]}
                       disabled={loadingRooms || availableRooms.length === 0}
                     >
-                      <Text style={[styles.summaryValue, { color: theme.textMain }]}>
-                        {loadingRooms ? (
-                          <ActivityIndicator size="small" color={theme.primary} />
-                        ) : selectedRoom ? (
-                          formatRoomNumber(selectedRoom.roomNumber)
-                        ) : (
-                          "N/A"
-                        )}
-                      </Text>
+                      <View style={styles.roomSelectorInfo}>
+                        <Ionicons name="apps-outline" size={18} color={theme.primary} />
+                        <Text style={[styles.summaryValue, { color: theme.textMain, marginLeft: 8 }]}>
+                          {loadingRooms ? (
+                            <ActivityIndicator size="small" color={theme.primary} />
+                          ) : selectedRoom ? (
+                            formatRoomNumber(selectedRoom.roomNumber)
+                          ) : (
+                            "N/A"
+                          )}
+                        </Text>
+                      </View>
                       {!loadingRooms && availableRooms.length > 0 && (
-                        <Ionicons name="chevron-down" size={16} color={theme.textMuted} />
+                        <View style={styles.roomSelectorAction}>
+                          <Text style={[styles.roomSelectorActionText, { color: theme.primary }]}>Change</Text>
+                          <Ionicons name="chevron-down" size={16} color={theme.primary} />
+                        </View>
                       )}
                     </Pressable>
+                    {!loadingRooms && availableRooms.length > 0 && (
+                      <Text style={[styles.roomModeHelper, { color: theme.textMuted }]}>
+                        {selectedRoom?.roomNumber <= 10 ? "✨ Auto-assigned (Range 1-10)" : "👤 Manually selected"}
+                      </Text>
+                    )}
                     {(!loadingRooms && availableRooms.length === 0) && (
                       <Text style={[styles.noRoomsWarning, { color: theme.danger }]}>No Rooms Available</Text>
                     )}
@@ -1205,7 +1247,7 @@ export default function AddGuest() {
           </View>
         </Modal>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </SafeAreaView >
   );
 }
 
@@ -1389,10 +1431,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginTop: 4,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    marginTop: 8,
+  },
+  roomSelectorInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  roomSelectorAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  roomSelectorActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  summaryTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  randomizeMiniBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+  },
+  randomizeMiniText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  roomModeHelper: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 6,
+    fontStyle: 'italic',
   },
   noRoomsWarning: {
     fontSize: 11,
