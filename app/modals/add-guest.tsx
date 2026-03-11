@@ -13,9 +13,10 @@ import {
   StatusBar,
   Modal,
   useWindowDimensions,
-  useColorScheme,
 } from "react-native";
 import { useState, useEffect } from "react";
+import { useColorScheme } from "../../hooks/use-color-scheme";
+import { useTheme } from "../../context/ThemeContext";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import {
   collection,
@@ -28,6 +29,7 @@ import {
   addDoc,
   writeBatch,
   doc,
+  orderBy,
 } from "firebase/firestore";
 import { db, auth } from "../../firebase/firebaseConfig";
 import { useRouter } from "expo-router";
@@ -40,14 +42,24 @@ import {
 
 type Meal = "breakfast" | "lunch" | "dinner";
 
+// Helper to format room number with leading zeros
+const formatRoomNumber = (num: number): string => {
+  if (num < 10) return `00${num}`;
+  if (num < 100) return `0${num}`;
+  return `${num}`;
+};
+
 export default function AddGuest() {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const systemColorScheme = useColorScheme();
+  const { theme: globalThemeName, setMode, mode: themeMode } = useTheme();
+  const [isDark, setIsDark] = useState(globalThemeName === 'dark');
   const isWide = width >= 820;
 
-  // Theme state
-  const [isDark, setIsDark] = useState(systemColorScheme === 'dark');
+  // Sync with global theme
+  useEffect(() => {
+    setIsDark(globalThemeName === 'dark');
+  }, [globalThemeName]);
 
   const [guestName, setGuestName] = useState("");
   const [aadharNumber, setAadharNumber] = useState("");
@@ -61,7 +73,11 @@ export default function AddGuest() {
     return tomorrow;
   });
 
-  const [availableRoom, setAvailableRoom] = useState<any>(null);
+  const [availableRooms, setAvailableRooms] = useState<any[]>([]);
+  const [nextAvailableRoom, setNextAvailableRoom] = useState<any>(null);
+  const [selectedRoom, setSelectedRoom] = useState<any>(null);
+  const [loadingRooms, setLoadingRooms] = useState(true);
+  const [showRoomPicker, setShowRoomPicker] = useState(false);
 
   // iOS modal pickers
   const [showCheckinPicker, setShowCheckinPicker] = useState(false);
@@ -88,25 +104,49 @@ export default function AddGuest() {
     checkout: false
   });
 
-  // Theme colors
-  const theme = {
-    background: isDark ? '#010101' : '#FFFFFF',
-    surface: isDark ? '#1A1A1A' : '#F9FAFB',
-    card: isDark ? '#1E1E1E' : '#FFFFFF',
-    text: isDark ? '#FFFFFF' : '#111827',
-    textSecondary: isDark ? '#9CA3AF' : '#6B7280',
-    textMuted: isDark ? '#6B7280' : '#9CA3AF',
-    border: isDark ? '#2D2D2D' : '#E5E7EB',
-    borderLight: isDark ? '#333333' : '#F3F4F6',
-    accent: '#2563EB',
-    accentLight: isDark ? 'rgba(37, 99, 235, 0.2)' : 'rgba(37, 99, 235, 0.1)',
-    success: '#10B981',
-    successLight: isDark ? 'rgba(16, 185, 129, 0.2)' : '#ECFDF5',
-    inputBg: isDark ? '#262626' : '#F9FAFB',
-    navbarBg: isDark ? '#1A1A1A' : '#FFFFFF',
-    placeholder: isDark ? '#6B7280' : '#9CA3AF',
-    modalBg: isDark ? '#1E1E1E' : '#FFFFFF',
-    modalBackdrop: isDark ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.5)',
+  // Theme colors - matching your rooms.tsx theme exactly
+  const theme = isDark ? {
+    bgMain: '#010409',
+    bgCard: 'rgba(13, 17, 23, 0.6)',
+    bgNav: 'rgba(1, 4, 9, 0.8)',
+    textMain: '#f0f6fc',
+    textMuted: '#8b949e',
+    glass: 'rgba(255, 255, 255, 0.03)',
+    glassBorder: 'rgba(255, 255, 255, 0.1)',
+    shadow: 'rgba(0, 0, 0, 0.6)',
+    primary: '#2563eb',
+    primaryHover: '#1d4ed8',
+    primaryGlow: 'rgba(37, 99, 235, 0.35)',
+    accent: '#38bdf8',
+    success: '#22c55e',
+    warning: '#f59e0b',
+    danger: '#ef4444',
+    inputBg: '#262626',
+    navbarBg: '#1A1A1A',
+    placeholder: '#6B7280',
+    modalBg: '#1E1E1E',
+    modalBackdrop: 'rgba(0,0,0,0.7)',
+  } : {
+    bgMain: '#f8fafc',
+    bgCard: '#ffffff',
+    bgNav: 'rgba(248, 250, 252, 0.9)',
+    textMain: '#0f172a',
+    textMuted: '#64748b',
+    glass: 'rgba(37, 99, 235, 0.04)',
+    glassBorder: 'rgba(37, 99, 235, 0.12)',
+    shadow: 'rgba(37, 99, 235, 0.15)',
+    primary: '#2563eb',
+    primaryHover: '#1d4ed8',
+    primaryGlow: 'rgba(37, 99, 235, 0.25)',
+    accent: '#0ea5e9',
+    success: '#16a34a',
+    warning: '#f59e0b',
+    danger: '#dc2626',
+    inputBg: '#F9FAFB',
+    navbarBg: '#FFFFFF',
+    placeholder: '#9CA3AF',
+    modalBg: '#FFFFFF',
+    modalBackdrop: 'rgba(0,0,0,0.5)',
   };
 
   const toggleMeal = (meal: Meal) => {
@@ -150,20 +190,62 @@ export default function AddGuest() {
   const webCheckoutValue = checkoutDate ? formatDateTimeLocal(checkoutDate) : "";
   const webMinValue = formatDateTimeLocal(new Date());
 
-  // Fetch an available room on load to show in summary
-  useEffect(() => {
-    const fetchFirstRoom = async () => {
-      try {
-        const q = query(getUserRoomsRef(), where("status", "==", "available"));
-        const snapshot = await getDocs(q);
-        if (!snapshot.empty) {
-          setAvailableRoom(snapshot.docs[0].data());
-        }
-      } catch (err) {
-        console.error("Error fetching available room:", err);
+  // Fetch available rooms on load and whenever a room might be assigned
+  const fetchAvailableRooms = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      setLoadingRooms(false);
+      return;
+    }
+
+    setLoadingRooms(true);
+    try {
+      const q = query(
+        getUserRoomsRef(),
+        where("status", "==", "available")
+      );
+      const snapshot = await getDocs(q);
+
+      if (!snapshot.empty) {
+        const rooms = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...(doc.data() as any)
+        })).sort((a: any, b: any) => (Number(a.roomNumber) || 0) - (Number(b.roomNumber) || 0));
+
+        setAvailableRooms(rooms);
+        // The first room in the sorted list is the next available (lowest number)
+        const firstRoom = rooms[0];
+        setNextAvailableRoom(firstRoom);
+
+        // Only auto-select if no room is selected or the selected room is no longer available
+        setSelectedRoom((prev: any) => {
+          if (!prev) return firstRoom;
+          const found = rooms.find(r => r.id === prev.id);
+          return found || firstRoom;
+        });
+      } else {
+        setAvailableRooms([]);
+        setNextAvailableRoom(null);
+        setSelectedRoom(null);
       }
-    };
-    fetchFirstRoom();
+    } catch (err: any) {
+      console.error("Error fetching available rooms:", err);
+      // If error contains "index", it's a Firestore indexing issue
+      if (err.message?.includes("index")) {
+        console.warn("Firestore index required for this query combination.");
+      }
+    } finally {
+      setLoadingRooms(false);
+    }
+  };
+
+  // Initial fetch and refresh when component mounts
+  useEffect(() => {
+    fetchAvailableRooms();
+
+    // Set up a refresh interval to keep room availability updated
+    const interval = setInterval(fetchAvailableRooms, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   // Web-only styling for native datetime-local indicator
@@ -228,19 +310,55 @@ export default function AddGuest() {
 
       await batch.commit();
       console.log("Previous guest checked out successfully");
+
+      // Refresh available rooms after checkout
+      await fetchAvailableRooms();
     } catch (error) {
       console.error("Error checking out previous guest:", error);
     }
   };
 
+  // Helper: cross-platform alert
+  const showAlert = (title: string, message: string, onOk?: () => void) => {
+    if (Platform.OS === "web") {
+      window.alert(`${title}\n\n${message}`);
+      onOk?.();
+    } else {
+      Alert.alert(title, message, [{ text: "OK", onPress: onOk }]);
+    }
+  };
+
+  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+    if (Platform.OS === "web") {
+      if (window.confirm(`${title}\n\n${message}`)) {
+        onConfirm();
+      }
+    } else {
+      Alert.alert(title, message, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Confirm", style: "destructive", onPress: onConfirm },
+      ]);
+    }
+  };
+
   const createNewBooking = async (adminUid: string, currentUser: any) => {
     try {
+      const roomToBook = selectedRoom || nextAvailableRoom;
+      if (!roomToBook) {
+        showAlert("Error", "No room selected");
+        return;
+      }
+
+      const roomRef = getUserRoomRef(roomToBook.id);
+      const roomNumber = roomToBook.roomNumber;
+
+      // Create guest data
       const guestData: any = {
         adminId: adminUid,
         adminEmail: currentUser.email,
         guestMobile: mobile,
         guestName: guestName.trim(),
-        roomNumber: null,
+        roomNumber: roomNumber,
         isActive: true,
         isLoggedIn: false,
         createdAt: serverTimestamp(),
@@ -258,21 +376,6 @@ export default function AddGuest() {
       }
 
       const guestRef = await addDoc(collection(db, "guests"), guestData);
-
-      const q = query(getUserRoomsRef(), where("status", "==", "available"));
-      const snapshot = await getDocs(q);
-
-      if (snapshot.empty) {
-        Alert.alert(
-          "No Rooms Available",
-          "Guest registered but no rooms available. Please setup rooms first."
-        );
-        return;
-      }
-
-      const roomDoc = snapshot.docs[0];
-      const roomRef = getUserRoomRef(roomDoc.id);
-      const roomNumber = roomDoc.data().roomNumber;
 
       await runTransaction(db, async (transaction) => {
         const roomSnap = await transaction.get(roomRef);
@@ -299,61 +402,65 @@ export default function AddGuest() {
         }
 
         transaction.update(roomRef, roomUpdateData);
-
-        transaction.update(guestRef, {
-          roomNumber: roomNumber,
-        });
       });
 
       setAssignedRoom(roomNumber);
 
-      // Build guest info message
+      // Build guest info message with formatted room number
       let guestInfo = `Guest: ${guestName}\nMobile: ${mobile}`;
       if (email.trim()) guestInfo += `\nEmail: ${email}`;
       if (aadharNumber.trim()) guestInfo += `\nAadhar: ${aadharNumber}`;
-      guestInfo += `\nRoom: ${roomNumber}\nMeal: ${prettyMealText(selectedMeals)}`;
+      guestInfo += `\nRoom: ${formatRoomNumber(roomNumber)}\nMeal: ${prettyMealText(selectedMeals)}`;
 
-      Alert.alert(
-        "✅ Guest Added Successfully!",
-        guestInfo,
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              setGuestName("");
-              setMobile("");
-              setEmail("");
-              setAadharNumber("");
-              setCheckinDate(new Date());
-              setCheckoutDate(null);
-              setSelectedMeals([]);
-              setAssignedRoom(null);
-              router.replace("/(tabs)/rooms");
-            },
-          },
-        ]
-      );
+      showAlert("✅ Guest Added Successfully!", guestInfo, () => {
+        setGuestName("");
+        setMobile("");
+        setEmail("");
+        setAadharNumber("");
+        setCheckinDate(new Date());
+        setCheckoutDate(null);
+        setSelectedMeals([]);
+        setAssignedRoom(null);
+
+        // Refresh available rooms after successful booking
+        fetchAvailableRooms();
+
+        router.replace("/(tabs)/rooms");
+      });
     } catch (err) {
       console.error("Error creating booking:", err);
-      Alert.alert("Error", "Failed to create booking");
+      showAlert("Error", "Failed to create booking");
+
+      // Refresh available rooms in case of error
+      await fetchAvailableRooms();
     }
   };
 
   const assignRoom = async () => {
     if (!guestName.trim()) {
-      Alert.alert("Invalid Name", "Guest name is required");
+      showAlert("Invalid Name", "Guest name is required");
       return;
     }
     if (!/^[0-9]{10}$/.test(mobile)) {
-      Alert.alert("Invalid Mobile", "Mobile number must be exactly 10 digits");
+      showAlert("Invalid Mobile", "Mobile number must be exactly 10 digits");
       return;
     }
     if (!checkinDate || !checkoutDate) {
-      Alert.alert("Invalid Dates", "Please select both check-in and check-out dates");
+      showAlert("Invalid Dates", "Please select both check-in and check-out dates");
       return;
     }
     if (checkoutDate <= checkinDate) {
-      Alert.alert("Invalid Dates", "Checkout must be after check-in time");
+      showAlert("Invalid Dates", "Checkout must be after check-in time");
+      return;
+    }
+
+    // Check if rooms are available before proceeding
+    const roomToBook = selectedRoom || nextAvailableRoom;
+    if (!roomToBook) {
+      showAlert(
+        "No Rooms Available",
+        "No available rooms at the moment. Please check back later or setup rooms first."
+      );
       return;
     }
 
@@ -363,7 +470,8 @@ export default function AddGuest() {
       const currentUser = auth.currentUser;
 
       if (!currentUser) {
-        Alert.alert("Error", "You must be logged in as admin");
+        showAlert("Error", "You must be logged in as admin");
+        setLoading(false);
         return;
       }
 
@@ -379,24 +487,21 @@ export default function AddGuest() {
       if (!existingGuestSnap.empty) {
         const existingGuest = existingGuestSnap.docs[0].data();
 
-        Alert.alert(
+        showConfirm(
           "⚠️ Duplicate Booking Found",
-          `Guest with mobile ${mobile} already has an active booking in Room ${existingGuest.roomNumber}.\n\nDo you want to check out the previous guest and assign a new room?`,
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Checkout Previous & Continue",
-              style: "destructive",
-              onPress: async () => {
-                await checkoutPreviousGuest(
-                  uid,
-                  existingGuestSnap.docs[0].id,
-                  existingGuest.roomNumber
-                );
-                await createNewBooking(uid, currentUser);
-              },
-            },
-          ]
+          `Guest with mobile ${mobile} already has an active booking in Room ${formatRoomNumber(existingGuest.roomNumber)}.\n\nDo you want to check out the previous guest and assign a new room?`,
+          async () => {
+            try {
+              await checkoutPreviousGuest(
+                uid,
+                existingGuestSnap.docs[0].id,
+                existingGuest.roomNumber
+              );
+              await createNewBooking(uid, currentUser);
+            } finally {
+              setLoading(false);
+            }
+          }
         );
 
         setLoading(false);
@@ -406,7 +511,7 @@ export default function AddGuest() {
       await createNewBooking(uid, currentUser);
     } catch (err) {
       console.error("Error adding guest:", err);
-      Alert.alert("Error", "Failed to add guest");
+      showAlert("Error", "Failed to add guest");
     } finally {
       setLoading(false);
     }
@@ -472,41 +577,47 @@ export default function AddGuest() {
     background: "transparent",
     padding: "16px 12px",
     fontSize: 15,
-    color: theme.text,
+    color: theme.textMain,
     fontWeight: 500,
     cursor: "pointer",
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.background} />
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bgMain }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={theme.bgMain} />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={[styles.container, { backgroundColor: theme.background }]}
+        style={[styles.container, { backgroundColor: theme.bgMain }]}
       >
         {/* Global Navbar */}
-        <View style={[styles.navbar, { backgroundColor: theme.navbarBg, borderBottomColor: theme.borderLight }]}>
+        <View style={[styles.navbar, { backgroundColor: theme.bgNav, borderBottomColor: theme.glassBorder }]}>
           <View style={styles.navbarLeft}>
+            <Pressable
+              onPress={() => router.back()}
+              style={[styles.backButton, { backgroundColor: theme.glass, borderColor: theme.glassBorder }]}
+            >
+              <Ionicons name="arrow-back" size={20} color={theme.textMain} />
+            </Pressable>
             <View style={styles.logoContainer}>
-              <Ionicons name="business" size={24} color={theme.accent} />
-              <Text style={[styles.logoText, { color: theme.text }]}>Roomio</Text>
+              <Ionicons name="business" size={24} color={theme.primary} />
+              <Text style={[styles.logoText, { color: theme.textMain }]}>Roomio</Text>
             </View>
           </View>
           <View style={styles.navbarRight}>
             <View style={styles.breadcrumb}>
-              <Text style={[styles.breadcrumbItem, { color: theme.textSecondary }]}>Dashboard</Text>
+              <Text style={[styles.breadcrumbItem, { color: theme.textMuted }]}>Dashboard</Text>
               <Ionicons name="chevron-forward" size={12} color={theme.textMuted} />
-              <Text style={[styles.breadcrumbItem, styles.breadcrumbActive, { color: theme.accent }]}>Add Guest</Text>
+              <Text style={[styles.breadcrumbItem, styles.breadcrumbActive, { color: theme.primary }]}>Add Guest</Text>
             </View>
             {/* Theme Toggle */}
             <Pressable
-              onPress={() => setIsDark(!isDark)}
-              style={[styles.themeToggle, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              onPress={() => setMode(isDark ? 'light' : 'dark')}
+              style={[styles.themeToggle, { backgroundColor: theme.glass, borderColor: theme.glassBorder }]}
             >
               <Ionicons
                 name={isDark ? "sunny-outline" : "moon-outline"}
                 size={20}
-                color={theme.accent}
+                color={theme.primary}
               />
             </Pressable>
           </View>
@@ -519,8 +630,8 @@ export default function AddGuest() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.pageHeader}>
-            <Text style={[styles.pageTitle, { color: theme.text }]}>Check-in Guest</Text>
-            <Text style={[styles.pageSubtitle, { color: theme.textSecondary }]}>
+            <Text style={[styles.pageTitle, { color: theme.textMain }]}>Check-in Guest</Text>
+            <Text style={[styles.pageSubtitle, { color: theme.textMuted }]}>
               Verify identity and complete room assignment for arriving guests.
             </Text>
           </View>
@@ -529,24 +640,24 @@ export default function AddGuest() {
             {/* Left Column */}
             <View style={styles.formColumn}>
               {/* Guest Details */}
-              <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
                 <View style={styles.cardHeaderSmall}>
-                  <Ionicons name="person" size={18} color={theme.accent} />
-                  <Text style={[styles.cardTitleSmall, { color: theme.text }]}>Guest Details</Text>
+                  <Ionicons name="person" size={18} color={theme.primary} />
+                  <Text style={[styles.cardTitleSmall, { color: theme.textMain }]}>Guest Details</Text>
                 </View>
 
                 <View style={styles.formSection}>
                   <View style={styles.inputGroup}>
-                    <Text style={[styles.label, { color: theme.textSecondary }]}>Full Name *</Text>
+                    <Text style={[styles.label, { color: theme.textMuted }]}>Full Name *</Text>
                     <TextInput
                       placeholder="e.g. Alexander Mitchell"
                       placeholderTextColor={theme.placeholder}
                       style={[
                         styles.formInput,
                         {
-                          backgroundColor: theme.inputBg,
-                          borderColor: isFocused.name ? theme.accent : theme.border,
-                          color: theme.text,
+                          backgroundColor: theme.glass,
+                          borderColor: isFocused.name ? theme.primary : theme.glassBorder,
+                          color: theme.textMain,
                         },
                       ]}
                       value={guestName}
@@ -558,19 +669,19 @@ export default function AddGuest() {
 
                   <View style={styles.inputRow}>
                     <View style={[styles.inputGroup, { flex: 1 }]}>
-                      <Text style={[styles.label, { color: theme.textSecondary }]}>Phone Number *</Text>
+                      <Text style={[styles.label, { color: theme.textMuted }]}>Phone Number *</Text>
                       <View style={[
                         styles.iconInputWrapper,
                         {
-                          backgroundColor: theme.inputBg,
-                          borderColor: isFocused.mobile ? theme.accent : theme.border,
+                          backgroundColor: theme.glass,
+                          borderColor: isFocused.mobile ? theme.primary : theme.glassBorder,
                         }
                       ]}>
                         <Ionicons name="call-outline" size={18} color={theme.textMuted} style={styles.inputIcon} />
                         <TextInput
                           placeholder="9876543210"
                           placeholderTextColor={theme.placeholder}
-                          style={[styles.iconInput, { color: theme.text }]}
+                          style={[styles.iconInput, { color: theme.textMain }]}
                           value={mobile}
                           onChangeText={setMobile}
                           keyboardType="phone-pad"
@@ -582,19 +693,19 @@ export default function AddGuest() {
                     </View>
 
                     <View style={[styles.inputGroup, { flex: 1 }]}>
-                      <Text style={[styles.label, { color: theme.textSecondary }]}>Email (Optional)</Text>
+                      <Text style={[styles.label, { color: theme.textMuted }]}>Email (Optional)</Text>
                       <View style={[
                         styles.iconInputWrapper,
                         {
-                          backgroundColor: theme.inputBg,
-                          borderColor: isFocused.email ? theme.accent : theme.border,
+                          backgroundColor: theme.glass,
+                          borderColor: isFocused.email ? theme.primary : theme.glassBorder,
                         }
                       ]}>
                         <Ionicons name="mail-outline" size={18} color={theme.textMuted} style={styles.inputIcon} />
                         <TextInput
                           placeholder="guest@email.com"
                           placeholderTextColor={theme.placeholder}
-                          style={[styles.iconInput, { color: theme.text }]}
+                          style={[styles.iconInput, { color: theme.textMain }]}
                           value={email}
                           onChangeText={setEmail}
                           keyboardType="email-address"
@@ -608,19 +719,19 @@ export default function AddGuest() {
 
                   {/* Aadhar Number - Optional */}
                   <View style={styles.inputGroup}>
-                    <Text style={[styles.label, { color: theme.textSecondary }]}>Aadhar Number (Optional)</Text>
+                    <Text style={[styles.label, { color: theme.textMuted }]}>Aadhar Number (Optional)</Text>
                     <View style={[
                       styles.iconInputWrapper,
                       {
-                        backgroundColor: theme.inputBg,
-                        borderColor: isFocused.aadhar ? theme.accent : theme.border,
+                        backgroundColor: theme.glass,
+                        borderColor: isFocused.aadhar ? theme.primary : theme.glassBorder,
                       }
                     ]}>
                       <Ionicons name="card-outline" size={18} color={theme.textMuted} style={styles.inputIcon} />
                       <TextInput
                         placeholder="1234 5678 9012"
                         placeholderTextColor={theme.placeholder}
-                        style={[styles.iconInput, { color: theme.text }]}
+                        style={[styles.iconInput, { color: theme.textMain }]}
                         value={aadharNumber}
                         onChangeText={setAadharNumber}
                         keyboardType="number-pad"
@@ -634,10 +745,10 @@ export default function AddGuest() {
               </View>
 
               {/* Meal Plan Selection */}
-              <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
                 <View style={styles.cardHeaderSmall}>
-                  <Ionicons name="restaurant" size={18} color={theme.accent} />
-                  <Text style={[styles.cardTitleSmall, { color: theme.text }]}>Meal Plan Selection</Text>
+                  <Ionicons name="restaurant" size={18} color={theme.primary} />
+                  <Text style={[styles.cardTitleSmall, { color: theme.textMain }]}>Meal Plan Selection</Text>
                 </View>
 
                 <View style={styles.mealGrid}>
@@ -651,8 +762,8 @@ export default function AddGuest() {
                         style={[
                           styles.mealPill,
                           {
-                            backgroundColor: theme.surface,
-                            borderColor: isSelected ? theme.accent : theme.border,
+                            backgroundColor: theme.glass,
+                            borderColor: isSelected ? theme.primary : theme.glassBorder,
                           },
                           isSelected && styles.mealPillActive,
                         ]}
@@ -661,7 +772,7 @@ export default function AddGuest() {
                         <Text
                           style={[
                             styles.mealPillText,
-                            { color: isSelected ? theme.accent : theme.textSecondary },
+                            { color: isSelected ? theme.primary : theme.textMuted },
                           ]}
                         >
                           {meal.charAt(0).toUpperCase() + meal.slice(1)}
@@ -673,22 +784,22 @@ export default function AddGuest() {
               </View>
 
               {/* Stay Details */}
-              <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <View style={[styles.card, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
                 <View style={styles.cardHeaderSmall}>
-                  <Ionicons name="calendar" size={18} color={theme.accent} />
-                  <Text style={[styles.cardTitleSmall, { color: theme.text }]}>Stay Details</Text>
+                  <Ionicons name="calendar" size={18} color={theme.primary} />
+                  <Text style={[styles.cardTitleSmall, { color: theme.textMain }]}>Stay Details</Text>
                 </View>
 
                 <View style={styles.dateRow}>
                   {/* Check-in */}
                   <View style={[styles.dateColumn, { flex: 1 }]}>
-                    <Text style={[styles.label, { color: theme.textSecondary }]}>Check-in *</Text>
+                    <Text style={[styles.label, { color: theme.textMuted }]}>Check-in *</Text>
                     {Platform.OS === "web" ? (
                       <View style={[
                         styles.datePickerWeb,
                         {
-                          backgroundColor: theme.inputBg,
-                          borderColor: isFocused.checkin ? theme.accent : theme.border,
+                          backgroundColor: theme.glass,
+                          borderColor: isFocused.checkin ? theme.primary : theme.glassBorder,
                         }
                       ]}>
                         <Ionicons name="calendar-outline" size={18} color={theme.textMuted} style={styles.dateIcon} />
@@ -712,7 +823,7 @@ export default function AddGuest() {
                           onBlur={() => setIsFocused(prev => ({ ...prev, checkin: false }))}
                           style={{
                             ...webNativeDateInputStyle,
-                            color: theme.text,
+                            color: theme.textMain,
                           }}
                         />
                       </View>
@@ -721,8 +832,8 @@ export default function AddGuest() {
                         style={[
                           styles.datePickerNative,
                           {
-                            backgroundColor: theme.inputBg,
-                            borderColor: isFocused.checkin ? theme.accent : theme.border,
+                            backgroundColor: theme.glass,
+                            borderColor: isFocused.checkin ? theme.primary : theme.glassBorder,
                           }
                         ]}
                         onPress={() => {
@@ -747,7 +858,7 @@ export default function AddGuest() {
                         }}
                       >
                         <Ionicons name="calendar-outline" size={18} color={theme.textMuted} style={styles.dateIcon} />
-                        <Text style={[styles.dateText, { color: theme.text }]} numberOfLines={1}>
+                        <Text style={[styles.dateText, { color: theme.textMain }]} numberOfLines={1}>
                           {formatDateDisplay(checkinDate)}
                         </Text>
                       </Pressable>
@@ -756,13 +867,13 @@ export default function AddGuest() {
 
                   {/* Check-out */}
                   <View style={[styles.dateColumn, { flex: 1 }]}>
-                    <Text style={[styles.label, { color: theme.textSecondary }]}>Check-out *</Text>
+                    <Text style={[styles.label, { color: theme.textMuted }]}>Check-out *</Text>
                     {Platform.OS === "web" ? (
                       <View style={[
                         styles.datePickerWeb,
                         {
-                          backgroundColor: theme.inputBg,
-                          borderColor: isFocused.checkout ? theme.accent : theme.border,
+                          backgroundColor: theme.glass,
+                          borderColor: isFocused.checkout ? theme.primary : theme.glassBorder,
                         }
                       ]}>
                         <Ionicons name="calendar-outline" size={18} color={theme.textMuted} style={styles.dateIcon} />
@@ -779,7 +890,7 @@ export default function AddGuest() {
                           onBlur={() => setIsFocused(prev => ({ ...prev, checkout: false }))}
                           style={{
                             ...webNativeDateInputStyle,
-                            color: theme.text,
+                            color: theme.textMain,
                           }}
                         />
                       </View>
@@ -788,8 +899,8 @@ export default function AddGuest() {
                         style={[
                           styles.datePickerNative,
                           {
-                            backgroundColor: theme.inputBg,
-                            borderColor: isFocused.checkout ? theme.accent : theme.border,
+                            backgroundColor: theme.glass,
+                            borderColor: isFocused.checkout ? theme.primary : theme.glassBorder,
                           }
                         ]}
                         onPress={() => {
@@ -807,7 +918,7 @@ export default function AddGuest() {
                         }}
                       >
                         <Ionicons name="calendar-outline" size={18} color={theme.textMuted} style={styles.dateIcon} />
-                        <Text style={[styles.dateText, { color: theme.text }]} numberOfLines={1}>
+                        <Text style={[styles.dateText, { color: theme.textMain }]} numberOfLines={1}>
                           {formatDateDisplay(checkoutDate)}
                         </Text>
                       </Pressable>
@@ -819,50 +930,71 @@ export default function AddGuest() {
 
             {/* Right Column / Sidebar */}
             <View style={styles.sidebarColumn}>
-              <View style={[styles.sidebarCard, { backgroundColor: theme.card, borderColor: theme.accent }]}>
+              <View style={[styles.sidebarCard, { backgroundColor: theme.bgCard, borderColor: theme.primary }]}>
                 <View style={styles.sidebarHeader}>
-                  <Text style={[styles.sidebarTitle, { color: theme.text }]}>BOOKING SUMMARY</Text>
-                  <Text style={[styles.sidebarId, { color: theme.textSecondary }]}>ID: NEW-BOOKING</Text>
+                  <Text style={[styles.sidebarTitle, { color: theme.textMain }]}>BOOKING SUMMARY</Text>
+                  <Text style={[styles.sidebarId, { color: theme.textMuted }]}>ID: NEW-BOOKING</Text>
                 </View>
 
                 <View style={styles.summaryItem}>
-                  <View style={styles.summaryLabelBox}>
+                  <View style={[styles.summaryLabelBox, { flex: 1 }]}>
                     <Text style={[styles.summaryLabel, { color: theme.textMuted }]}>ROOM</Text>
-                    <Text style={[styles.summaryValue, { color: theme.text }]}>
-                      {availableRoom?.roomNumber || "Assigning..."}
-                    </Text>
+                    <Pressable
+                      onPress={() => availableRooms.length > 0 && setShowRoomPicker(true)}
+                      style={[
+                        styles.roomSelectorTrigger,
+                        { borderColor: theme.glassBorder, backgroundColor: theme.glass }
+                      ]}
+                      disabled={loadingRooms || availableRooms.length === 0}
+                    >
+                      <Text style={[styles.summaryValue, { color: theme.textMain }]}>
+                        {loadingRooms ? (
+                          <ActivityIndicator size="small" color={theme.primary} />
+                        ) : selectedRoom ? (
+                          formatRoomNumber(selectedRoom.roomNumber)
+                        ) : (
+                          "N/A"
+                        )}
+                      </Text>
+                      {!loadingRooms && availableRooms.length > 0 && (
+                        <Ionicons name="chevron-down" size={16} color={theme.textMuted} />
+                      )}
+                    </Pressable>
+                    {(!loadingRooms && availableRooms.length === 0) && (
+                      <Text style={[styles.noRoomsWarning, { color: theme.danger }]}>No Rooms Available</Text>
+                    )}
                   </View>
                   <View style={styles.summaryLabelBox}>
                     <Text style={[styles.summaryLabel, { color: theme.textMuted, textAlign: 'right' }]}>STAY</Text>
-                    <Text style={[styles.summaryValue, { color: theme.text, textAlign: 'right' }]}>
+                    <Text style={[styles.summaryValue, { color: theme.textMain, textAlign: 'right', marginTop: 8 }]}>
                       {checkinDate && checkoutDate
                         ? Math.ceil((checkoutDate.getTime() - checkinDate.getTime()) / (1000 * 3600 * 24))
                         : 1}
-                      <Text style={[styles.summarySub, { color: theme.textSecondary }]}> Nights</Text>
+                      <Text style={[styles.summarySub, { color: theme.textMuted }]}> Nights</Text>
                     </Text>
                   </View>
                 </View>
 
-                <View style={[styles.summaryDivider, { backgroundColor: theme.border }]} />
+                <View style={[styles.summaryDivider, { backgroundColor: theme.glassBorder }]} />
 
                 <View style={styles.guestInfoSummary}>
-                  <Text style={[styles.guestInfoLabel, { color: theme.textSecondary }]}>Guest</Text>
-                  <Text style={[styles.guestInfoValue, { color: theme.text }]} numberOfLines={1}>
+                  <Text style={[styles.guestInfoLabel, { color: theme.textMuted }]}>Guest</Text>
+                  <Text style={[styles.guestInfoValue, { color: theme.textMain }]} numberOfLines={1}>
                     {guestName || "Not entered"}
                   </Text>
-                  <Text style={[styles.guestInfoValueSmall, { color: theme.textSecondary }]} numberOfLines={1}>
+                  <Text style={[styles.guestInfoValueSmall, { color: theme.textMuted }]} numberOfLines={1}>
                     {mobile || "No phone"}
                   </Text>
                   {email ? (
-                    <Text style={[styles.guestInfoValueSmall, { color: theme.textSecondary, marginTop: 4 }]} numberOfLines={1}>
+                    <Text style={[styles.guestInfoValueSmall, { color: theme.textMuted, marginTop: 4 }]} numberOfLines={1}>
                       {email}
                     </Text>
                   ) : null}
                 </View>
 
                 <View style={styles.mealSummary}>
-                  <Text style={[styles.guestInfoLabel, { color: theme.textSecondary }]}>Meal Plan</Text>
-                  <Text style={[styles.guestInfoValue, { color: theme.text }]}>
+                  <Text style={[styles.guestInfoLabel, { color: theme.textMuted }]}>Meal Plan</Text>
+                  <Text style={[styles.guestInfoValue, { color: theme.textMain }]}>
                     {prettyMealText(selectedMeals) || "None selected"}
                   </Text>
                 </View>
@@ -870,21 +1002,33 @@ export default function AddGuest() {
                 <Pressable
                   style={({ pressed }) => [
                     styles.completeBtn,
-                    { backgroundColor: theme.accent },
-                    pressed && styles.completeBtnPressed,
+                    {
+                      backgroundColor: (selectedRoom || nextAvailableRoom) ? theme.primary : theme.textMuted,
+                      opacity: (!(selectedRoom || nextAvailableRoom) || loadingRooms) ? 0.5 : 1
+                    },
+                    pressed && (selectedRoom || nextAvailableRoom) && styles.completeBtnPressed,
                   ]}
                   onPress={assignRoom}
-                  disabled={loading}
+                  disabled={loading || !(selectedRoom || nextAvailableRoom) || loadingRooms}
                 >
                   {loading ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
                     <>
                       <Ionicons name="key" size={20} color="#fff" />
-                      <Text style={styles.completeBtnText}>COMPLETE CHECK-IN</Text>
+                      <Text style={styles.completeBtnText}>
+                        {loadingRooms ? "CHECKING ROOMS..." :
+                          (selectedRoom || nextAvailableRoom) ? "COMPLETE CHECK-IN" : "NO ROOMS AVAILABLE"}
+                      </Text>
                     </>
                   )}
                 </Pressable>
+
+                {(selectedRoom || nextAvailableRoom) && (
+                  <Text style={[styles.roomAvailabilityText, { color: theme.success }]}>
+                    ✓ Room {formatRoomNumber((selectedRoom || nextAvailableRoom).roomNumber)} is available
+                  </Text>
+                )}
 
                 <Text style={[styles.termsText, { color: theme.textMuted }]}>
                   By clicking complete, you confirm guest verification and room readiness.
@@ -912,7 +1056,7 @@ export default function AddGuest() {
                 setIsFocused((prev) => ({ ...prev, checkin: false }));
               }}
             />
-            <View style={[styles.modalSheet, { backgroundColor: theme.modalBg }]}>
+            <View style={[styles.modalSheet, { backgroundColor: theme.bgCard }]}>
               <View style={styles.modalHeader}>
                 <Pressable
                   onPress={() => {
@@ -920,10 +1064,10 @@ export default function AddGuest() {
                     setIsFocused((prev) => ({ ...prev, checkin: false }));
                   }}
                 >
-                  <Text style={[styles.modalAction, { color: theme.textSecondary }]}>Cancel</Text>
+                  <Text style={[styles.modalAction, { color: theme.textMuted }]}>Cancel</Text>
                 </Pressable>
 
-                <Text style={[styles.modalTitle, { color: theme.text }]}>Select Check-in</Text>
+                <Text style={[styles.modalTitle, { color: theme.textMain }]}>Select Check-in</Text>
 
                 <Pressable
                   onPress={() => {
@@ -937,7 +1081,7 @@ export default function AddGuest() {
                     }
                   }}
                 >
-                  <Text style={[styles.modalAction, styles.modalActionPrimary, { color: theme.accent }]}>
+                  <Text style={[styles.modalAction, styles.modalActionPrimary, { color: theme.primary }]}>
                     Done
                   </Text>
                 </Pressable>
@@ -974,7 +1118,7 @@ export default function AddGuest() {
                 setIsFocused((prev) => ({ ...prev, checkout: false }));
               }}
             />
-            <View style={[styles.modalSheet, { backgroundColor: theme.modalBg }]}>
+            <View style={[styles.modalSheet, { backgroundColor: theme.bgCard }]}>
               <View style={styles.modalHeader}>
                 <Pressable
                   onPress={() => {
@@ -982,10 +1126,10 @@ export default function AddGuest() {
                     setIsFocused((prev) => ({ ...prev, checkout: false }));
                   }}
                 >
-                  <Text style={[styles.modalAction, { color: theme.textSecondary }]}>Cancel</Text>
+                  <Text style={[styles.modalAction, { color: theme.textMuted }]}>Cancel</Text>
                 </Pressable>
 
-                <Text style={[styles.modalTitle, { color: theme.text }]}>Select Check-out</Text>
+                <Text style={[styles.modalTitle, { color: theme.textMain }]}>Select Check-out</Text>
 
                 <Pressable
                   onPress={() => {
@@ -994,7 +1138,7 @@ export default function AddGuest() {
                     setCheckoutDate(iosTempCheckout);
                   }}
                 >
-                  <Text style={[styles.modalAction, styles.modalActionPrimary, { color: theme.accent }]}>
+                  <Text style={[styles.modalAction, styles.modalActionPrimary, { color: theme.primary }]}>
                     Done
                   </Text>
                 </Pressable>
@@ -1012,6 +1156,54 @@ export default function AddGuest() {
             </View>
           </Modal>
         )}
+
+        {/* Room Selection Modal */}
+        <Modal
+          visible={showRoomPicker}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowRoomPicker(false)}
+        >
+          <View style={[styles.modalBackdrop, { backgroundColor: theme.modalBackdrop }]}>
+            <Pressable style={styles.modalBackdrop} onPress={() => setShowRoomPicker(false)} />
+            <View style={[styles.roomPickerCard, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: theme.textMain }]}>Select Available Room</Text>
+                <Pressable onPress={() => setShowRoomPicker(false)}>
+                  <Ionicons name="close" size={24} color={theme.textMuted} />
+                </Pressable>
+              </View>
+              <ScrollView style={styles.roomList} showsVerticalScrollIndicator={false}>
+                <View style={styles.roomGrid}>
+                  {availableRooms.map((room) => (
+                    <Pressable
+                      key={room.id}
+                      style={[
+                        styles.roomItem,
+                        {
+                          backgroundColor: theme.glass,
+                          borderColor: selectedRoom?.id === room.id ? theme.primary : theme.glassBorder
+                        },
+                        selectedRoom?.id === room.id && styles.roomItemActive
+                      ]}
+                      onPress={() => {
+                        setSelectedRoom(room);
+                        setShowRoomPicker(false);
+                      }}
+                    >
+                      <Text style={[
+                        styles.roomItemText,
+                        { color: selectedRoom?.id === room.id ? theme.primary : theme.textMain }
+                      ]}>
+                        {formatRoomNumber(room.roomNumber)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -1035,10 +1227,11 @@ const styles = StyleSheet.create({
   logoContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logoText: { fontSize: 20, fontWeight: '800' },
   navbarRight: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  breadcrumb: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  breadcrumb: { flexDirection: 'row', alignItems: 'center', gap: 6, display: 'none' },
+  backButton: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, marginRight: 12 },
   breadcrumbItem: { fontSize: 13, fontWeight: '500' },
   breadcrumbActive: { fontWeight: '600' },
-  themeToggle: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  themeToggle: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
 
   pageHeader: { paddingHorizontal: 20, paddingTop: 32, marginBottom: 32 },
   pageTitle: { fontSize: 32, fontWeight: '800', marginBottom: 8 },
@@ -1168,7 +1361,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
-    shadowColor: '#3B82F6',
+    shadowColor: '#2563EB',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
@@ -1176,7 +1369,13 @@ const styles = StyleSheet.create({
   },
   completeBtnPressed: { transform: [{ scale: 0.98 }] },
   completeBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  termsText: { fontSize: 11, textAlign: 'center', marginTop: 16, lineHeight: 16 },
+  roomAvailabilityText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 12
+  },
+  termsText: { fontSize: 11, textAlign: 'center', marginTop: 12, lineHeight: 16 },
 
   modalBackdrop: { flex: 1 },
   modalSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
@@ -1184,4 +1383,55 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: '800' },
   modalAction: { fontSize: 16, fontWeight: '700' },
   modalActionPrimary: { fontWeight: '900' },
+
+  roomSelectorTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  noRoomsWarning: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  roomPickerCard: {
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '70%',
+    padding: 24,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignSelf: 'center',
+    marginTop: 'auto',
+    marginBottom: 'auto',
+  },
+  roomList: {
+    marginTop: 20,
+  },
+  roomGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'center',
+  },
+  roomItem: {
+    width: '30%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  roomItemActive: {
+    borderWidth: 2,
+  },
+  roomItemText: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
 });

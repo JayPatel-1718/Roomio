@@ -67,7 +67,10 @@ export default function Dashboard() {
   const { theme: currentTheme, colors: theme, mode, setMode } = useTheme();
   const isDark = currentTheme === "dark";
 
-  const isWide = width >= 900;
+  // Responsive flags
+  const isWide = width >= 900;   // desktop-ish
+  const isTablet = width >= 600; // tablet-ish
+  const isNarrow = width < 600;  // mobile
 
   const [user, setUser] = useState<User | null>(auth.currentUser);
 
@@ -177,11 +180,11 @@ export default function Dashboard() {
     // Combined Rooms Listener for stats
     const roomsRef = collection(db, "users", uid, "rooms");
     const unsubRooms = onSnapshot(roomsRef, (snap) => {
-      const allRooms = snap.docs.map(d => d.data());
+      const allRooms = snap.docs.map((d) => d.data());
       setTotalRooms(snap.size);
 
-      const occupied = allRooms.filter(r => r.status === "occupied").length;
-      const available = allRooms.filter(r => r.status === "available").length;
+      const occupied = allRooms.filter((r) => r.status === "occupied").length;
+      const available = allRooms.filter((r) => r.status === "available").length;
 
       setActiveRooms(occupied + available); // "Active" as in operational
       setOccupiedCount(occupied); // Helper for UI
@@ -199,7 +202,7 @@ export default function Dashboard() {
       limit(5)
     );
     const unsubGuests = onSnapshot(guestsQuery, (snap) => {
-      setRecentActivity(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setRecentActivity(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
 
     const requestsQuery = query(
@@ -208,7 +211,7 @@ export default function Dashboard() {
       where("status", "==", "pending")
     );
     const unsubRequests = onSnapshot(requestsQuery, (snap) => {
-      setRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
 
     const ordersQuery = query(
@@ -217,7 +220,7 @@ export default function Dashboard() {
       where("status", "==", "pending")
     );
     const unsubOrders = onSnapshot(ordersQuery, (snap) => {
-      setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
 
     return () => {
@@ -338,8 +341,6 @@ export default function Dashboard() {
     }
   };
 
-
-
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
@@ -381,7 +382,7 @@ export default function Dashboard() {
                   {
                     backgroundColor: theme.bgCard,
                     borderColor: theme.glassBorder,
-                    maxWidth: 480,
+                    maxWidth: isNarrow ? "92%" : 480,
                   },
                 ]}
                 onPress={() => { }}
@@ -465,12 +466,13 @@ export default function Dashboard() {
             style={[styles.container, { opacity: fadeAnim }]}
             contentContainerStyle={[
               styles.content,
-              isWide && styles.contentWide
+              isWide && styles.contentWide,
+              isNarrow && styles.contentNarrow,
             ]}
             showsVerticalScrollIndicator={false}
           >
-            {/* NEW HEADER DESIGN */}
-            <View style={styles.header}>
+            {/* HEADER */}
+            <View style={[styles.header, isNarrow && styles.headerNarrow]}>
               <View style={styles.headerLeft}>
                 <Text style={[styles.greeting, { color: theme.textMuted }]}>
                   {new Date().getHours() < 12 ? "GOOD MORNING" : "GOOD AFTERNOON"}, ADMIN
@@ -480,28 +482,34 @@ export default function Dashboard() {
                 </Text>
               </View>
 
-              <View style={styles.headerRight}>
+              <View style={[styles.headerRight, isNarrow && styles.headerRightNarrow]}>
                 <Pressable
                   onPress={() => setMode(isDark ? "light" : "dark")}
                   style={[styles.headerToolBtn, { borderColor: theme.glassBorder }]}
                 >
-                  <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={20} color={theme.textMain} />
+                  <Ionicons
+                    name={isDark ? "sunny-outline" : "moon-outline"}
+                    size={20}
+                    color={theme.textMain}
+                  />
                 </Pressable>
 
-                {isWide && <View style={[styles.headerDivider, { backgroundColor: theme.glassBorder }]} />}
+                {!isNarrow && <View style={[styles.headerDivider, { backgroundColor: theme.glassBorder }]} />}
 
-                <Pressable
-                  onPress={() => router.push("/modals/add-guest")}
-                  style={[styles.desktopAddBtn, { backgroundColor: theme.primary }]}
-                >
-                  <Ionicons name="add" size={20} color="#fff" />
-                  <Text style={styles.desktopAddBtnText}>Add Guest</Text>
-                </Pressable>
+                {!isNarrow && (
+                  <Pressable
+                    onPress={() => router.push("/modals/add-guest")}
+                    style={[styles.desktopAddBtn, { backgroundColor: theme.primary }]}
+                  >
+                    <Ionicons name="add" size={20} color="#fff" />
+                    <Text style={styles.desktopAddBtnText}>Add Guest</Text>
+                  </Pressable>
+                )}
               </View>
             </View>
 
             {/* SUMMARY CARDS GRID */}
-            <View style={styles.metricsGrid}>
+            <View style={[styles.metricsGrid, isNarrow && styles.metricsGridNarrow]}>
               <View style={[styles.metricCard, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
                 <View style={styles.metricHeaderRow}>
                   <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Active Rooms</Text>
@@ -551,7 +559,7 @@ export default function Dashboard() {
             </View>
 
             {/* MIDDLE SECTION: SERVICE & FOOD */}
-            <View style={[styles.sectionsRow, isWide && styles.sectionsRowWide]}>
+            <View style={[styles.sectionsRow, isNarrow && styles.sectionsRowNarrow, isWide && styles.sectionsRowWide]}>
               {/* SERVICE REQUESTS */}
               <View style={[styles.sectionCard, { backgroundColor: theme.bgCard, borderColor: theme.glassBorder }]}>
                 <View style={styles.sectionCardHeader}>
@@ -575,7 +583,7 @@ export default function Dashboard() {
                     <Text style={[styles.innerEmptySub, { color: theme.textMuted }]}>Everything is up to date.</Text>
                   </View>
                 ) : (
-                  requests.slice(0, 3).map((r) => (
+                  requests.slice(0, isNarrow ? 2 : 3).map((r) => (
                     <View key={r.id} style={[styles.requestItem, { borderBottomColor: theme.glassBorder }]}>
                       <View style={styles.requestMain}>
                         <Text style={[styles.requestRoom, { color: theme.primary }]}>Room {r.roomNumber}</Text>
@@ -615,7 +623,7 @@ export default function Dashboard() {
                     <Text style={[styles.innerEmptySub, { color: theme.textMuted }]}>Waiting for guest orders.</Text>
                   </View>
                 ) : (
-                  orders.slice(0, 3).map((o) => (
+                  orders.slice(0, isNarrow ? 2 : 3).map((o) => (
                     <View key={o.id} style={[styles.requestItem, { borderBottomColor: theme.glassBorder }]}>
                       <View style={styles.requestMain}>
                         <Text style={[styles.requestRoom, { color: theme.success }]}>Room {o.roomNumber}</Text>
@@ -642,7 +650,7 @@ export default function Dashboard() {
               </View>
 
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.table}>
+                <View style={[styles.table, { minWidth: isNarrow ? 620 : 900 }]}>
                   {/* Header Row */}
                   <View style={[styles.tableRow, styles.tableHeaderRow, { borderBottomColor: theme.glassBorder }]}>
                     <Text style={[styles.tableCol, styles.colRoomHeader, { color: theme.textMuted }]}>ROOM</Text>
@@ -682,12 +690,12 @@ export default function Dashboard() {
                           </View>
                           <View style={styles.colDateHeader}>
                             <Text style={[styles.tableDateText, { color: theme.textMain }]}>
-                              {checkin.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {checkin.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                             </Text>
                           </View>
                           <View style={styles.colDateHeader}>
                             <Text style={[styles.tableDateText, { color: theme.textMain }]}>
-                              {checkout.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {checkout.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                             </Text>
                           </View>
                         </View>
@@ -701,10 +709,20 @@ export default function Dashboard() {
             {/* SETUP BUTTON (Less prominent) */}
             <Pressable
               onPress={() => setupRooms(101, 20)}
-              style={{ marginTop: 40, alignSelf: 'center', opacity: 0.2 }}
+              style={{ marginTop: 40, alignSelf: "center", opacity: 0.2 }}
             >
               <Text style={{ color: theme.textMuted, fontSize: 10 }}>System Maintenance: Initialize Hotel Rooms</Text>
             </Pressable>
+
+            {/* Floating Add Button for mobile */}
+            {isNarrow && (
+              <Pressable
+                onPress={() => router.push("/modals/add-guest")}
+                style={[styles.fab, { backgroundColor: theme.primary }]}
+              >
+                <Ionicons name="add" size={26} color="#fff" />
+              </Pressable>
+            )}
           </Animated.ScrollView>
         </View>
       </View>
@@ -714,56 +732,65 @@ export default function Dashboard() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  mainLayout: { flex: 1, flexDirection: 'row' },
+  mainLayout: { flex: 1, flexDirection: "row" },
 
   mainArea: { flex: 1 },
   container: { flex: 1 },
   content: { padding: 16, paddingBottom: 60 },
   contentWide: { paddingHorizontal: 48, paddingTop: 40 },
+  contentNarrow: { paddingHorizontal: 12, paddingBottom: 80 },
 
   /* Header */
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 40,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 28,
+  },
+  headerNarrow: {
+    marginBottom: 20,
+    alignItems: "flex-start",
+    gap: 12,
   },
   headerLeft: {
     gap: 4,
   },
   greeting: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: "800",
     letterSpacing: 1.2,
   },
   title: {
     fontSize: 32,
-    fontWeight: '900',
+    fontWeight: "900",
     letterSpacing: -0.8,
   },
   headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 12,
+  },
+  headerRightNarrow: {
+    marginLeft: "auto",
   },
   headerToolBtn: {
     width: 44,
     height: 44,
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
-    position: 'relative',
+    position: "relative",
   },
   headerBadge: {
-    position: 'absolute',
+    position: "absolute",
     top: 12,
     right: 12,
     width: 8,
     height: 8,
     borderRadius: 4,
     borderWidth: 2,
-    borderColor: '#fff',
+    borderColor: "#fff",
   },
   headerDivider: {
     width: 1,
@@ -771,74 +798,90 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   desktopAddBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderRadius: 12,
   },
   desktopAddBtnText: {
-    color: '#fff',
-    fontWeight: '800',
+    color: "#fff",
+    fontWeight: "800",
     fontSize: 14,
   },
 
   /* Metrics */
-  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 20, marginBottom: 40 },
-  metricCard: { flex: 1, minWidth: 220, padding: 24, borderRadius: 24, borderWidth: 1, gap: 12 },
-  metricHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  metricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 20,
+    marginBottom: 32,
+  },
+  metricsGridNarrow: {
+    gap: 14,
+  },
+  metricCard: {
+    flex: 1,
+    minWidth: 220,
+    padding: 24,
+    borderRadius: 24,
+    borderWidth: 1,
+    gap: 12,
+  },
+  metricHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   metricDot: { width: 10, height: 10, borderRadius: 5 },
-  metricLabel: { fontWeight: '800', fontSize: 13 },
-  metricValue: { fontSize: 36, fontWeight: '900', letterSpacing: -1 },
-  metricTrend: { fontSize: 12, fontWeight: '700' },
-  metricTrendPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  metricTrendPillText: { fontSize: 11, fontWeight: '900' },
+  metricLabel: { fontWeight: "800", fontSize: 13 },
+  metricValue: { fontSize: 36, fontWeight: "900", letterSpacing: -1 },
+  metricTrend: { fontSize: 12, fontWeight: "700" },
+  metricTrendPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  metricTrendPillText: { fontSize: 11, fontWeight: "900" },
 
   /* Sections */
-  sectionsRow: { flexDirection: 'column', gap: 24, marginBottom: 40 },
-  sectionsRowWide: { flexDirection: 'row' },
+  sectionsRow: { flexDirection: "column", gap: 24, marginBottom: 36 },
+  sectionsRowNarrow: { gap: 18, marginBottom: 28 },
+  sectionsRowWide: { flexDirection: "row" },
   sectionCard: { flex: 1, padding: 28, borderRadius: 32, borderWidth: 1 },
-  sectionCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 },
-  sectionHeaderLeftContent: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  sectionTitle: { fontSize: 20, fontWeight: '900' },
+  sectionCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 28 },
+  sectionHeaderLeftContent: { flexDirection: "row", alignItems: "center", gap: 12 },
+  sectionTitle: { fontSize: 20, fontWeight: "900" },
   badgePill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
-  badgePillText: { fontWeight: '900', fontSize: 13 },
-  viewAllText: { fontWeight: '800', fontSize: 14 },
+  badgePillText: { fontWeight: "900", fontSize: 13 },
+  viewAllText: { fontWeight: "800", fontSize: 14 },
 
-  innerEmpty: { paddingVertical: 48, alignItems: 'center', gap: 12 },
-  innerEmptyIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
-  innerEmptyText: { fontSize: 16, fontWeight: '800' },
-  innerEmptySub: { fontSize: 14, fontWeight: '600', opacity: 0.7 },
+  innerEmpty: { paddingVertical: 48, alignItems: "center", gap: 12 },
+  innerEmptyIcon: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" },
+  innerEmptyText: { fontSize: 16, fontWeight: "800" },
+  innerEmptySub: { fontSize: 14, fontWeight: "600", opacity: 0.7 },
 
-  requestItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1 },
+  requestItem: { flexDirection: "row", alignItems: "center", paddingVertical: 16, borderBottomWidth: 1 },
   requestMain: { flex: 1, gap: 4 },
-  requestRoom: { fontSize: 12, fontWeight: '800' },
-  requestType: { fontSize: 16, fontWeight: '700' },
-  miniBtn: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  requestRoom: { fontSize: 12, fontWeight: "800" },
+  requestType: { fontSize: 16, fontWeight: "700" },
+  miniBtn: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
 
   /* Table */
   tableCard: { padding: 32, borderRadius: 32, borderWidth: 1, marginBottom: 40 },
   tableHeaderSection: { marginBottom: 32 },
-  tableTitle: { fontSize: 22, fontWeight: '900' },
-  table: { minWidth: 900 },
-  tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 20, borderBottomWidth: 1 },
+  tableTitle: { fontSize: 22, fontWeight: "900" },
+  table: {},
+  tableRow: { flexDirection: "row", alignItems: "center", paddingVertical: 20, borderBottomWidth: 1 },
   tableHeaderRow: { borderBottomWidth: 1, paddingBottom: 16 },
-  tableCol: { fontWeight: '800', fontSize: 13 },
+  tableCol: { fontWeight: "800", fontSize: 13 },
   colRoomHeader: { width: 120 },
   colGuestHeader: { flex: 1 },
   colStatusHeader: { width: 180 },
   colDateHeader: { width: 180 },
 
-  guestInfoCell: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  guestAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  guestInfoCell: { flexDirection: "row", alignItems: "center", gap: 14 },
+  guestAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
 
-  tableRoomText: { fontWeight: '900', fontSize: 15 },
-  tableGuestText: { fontWeight: '800', fontSize: 15 },
-  tableDateText: { fontSize: 14, fontWeight: '700' },
+  tableRoomText: { fontWeight: "900", fontSize: 15 },
+  tableGuestText: { fontWeight: "800", fontSize: 15 },
+  tableDateText: { fontSize: 14, fontWeight: "700" },
   statusPill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
-  statusPillText: { fontSize: 12, fontWeight: '900' },
-  emptyTable: { paddingVertical: 60, alignItems: 'center' },
+  statusPillText: { fontSize: 12, fontWeight: "900" },
+  emptyTable: { paddingVertical: 60, alignItems: "center" },
 
   /* Modal */
   timeModalOverlay: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
@@ -856,4 +899,17 @@ const styles = StyleSheet.create({
   timeCancelText: { fontWeight: "900", fontSize: 16 },
   timeConfirmBtn: { flex: 1, paddingVertical: 18, borderRadius: 20, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 },
   timeConfirmText: { color: "#FFFFFF", fontWeight: "900", fontSize: 16 },
+
+  /* FAB for mobile */
+  fab: {
+    position: "absolute",
+    right: 16,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 6,
+  },
 });

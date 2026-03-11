@@ -108,8 +108,6 @@ export default function MenuScreen() {
         Animated.timing(fadeAnim, { toValue: 1, duration: 450, useNativeDriver: true }).start();
     }, []);
 
-
-
     // ─── FIREBASE ─────────────────────────────────────────────────────────────
     useEffect(() => {
         if (!user) return;
@@ -943,42 +941,55 @@ export default function MenuScreen() {
             {/* MAIN SCREEN */}
             <Animated.View style={{ opacity: fadeAnim, flex: 1 }}>
                 {/* HEADER */}
-                <View style={[S.header, { backgroundColor: T.bgCard }]}>
+                <View style={[S.header, isWide && S.headerWide, { backgroundColor: T.bgCard }]}>
                     <View style={S.headerLeft}>
-                        <Text style={[S.greeting, { color: T.textMuted }]}>HOTEL MENU</Text>
-                        <Text style={[S.title, { color: T.textMain }]}>Menu Management</Text>
+                        <Text style={[S.greeting, { color: T.textMuted }]}>
+                            {new Date().getHours() < 12 ? "GOOD MORNING" : "GOOD AFTERNOON"}, ADMIN
+                        </Text>
+                        <Text style={[S.title, { color: T.textMain }]}>
+                            Menu Management
+                        </Text>
                     </View>
-                    <View style={S.headerRight}>
+
+                    <View style={[S.headerRight, isWide && S.headerRightWide]}>
+                        <Pressable
+                            onPress={() => setMode(isDark ? "light" : "dark")}
+                            style={[S.headerToolBtn, { borderColor: T.glassBorder }]}
+                        >
+                            <Ionicons name={isDark ? "sunny-outline" : "moon-outline"} size={20} color={T.textMain} />
+                        </Pressable>
 
                         <Pressable onPress={handleCamera}
                             style={({ pressed }) => [S.scanBtn, pressed && { opacity: 0.9 }]}>
                             <Ionicons name="camera" size={17} color="#fff" />
                             <Text style={S.scanTxt}>Scan</Text>
                         </Pressable>
+
+                        <Pressable onPress={() => openAdd()}
+                            style={({ pressed }) => [S.addBtn, { backgroundColor: T.primary }, pressed && { opacity: 0.9 }]}>
+                            <Ionicons name="add" size={18} color="#fff" />
+                            <Text style={S.addBtnText}>Add Menu Item</Text>
+                        </Pressable>
                     </View>
 
-                    <View style={[S.importBar, { backgroundColor: T.glass, borderColor: T.glassBorder }]}>
-                        <Pressable onPress={handleGallery}
-                            style={({ pressed }) => [S.importOption, pressed && { opacity: 0.8 }]}>
-                            <Ionicons name="images-outline" size={15} color={T.textMain} />
-                            <Text style={[S.importTxt, { color: T.textMain }]}>Photo Library</Text>
-                        </Pressable>
-                        <View style={[S.dividerV, { backgroundColor: T.glassBorder }]} />
-                        <Pressable onPress={handleFile}
-                            style={({ pressed }) => [S.importOption, pressed && { opacity: 0.8 }]}>
-                            <Ionicons name="document-text-outline" size={15} color={T.textMain} />
-                            <Text style={[S.importTxt, { color: T.textMain }]}>PDF / File</Text>
-                        </Pressable>
-                        <View style={[S.dividerV, { backgroundColor: T.glassBorder }]} />
-                        <Pressable onPress={() => openAdd()}
-                            style={({ pressed }) => [S.importOption, pressed && { opacity: 0.8 }]}>
-                            <Ionicons name="add-circle-outline" size={15} color={T.primary} />
-                            <Text style={[S.importTxt, { color: T.primary }]}>Manual Add</Text>
-                        </Pressable>
-                    </View>
+                    {!isWide && (
+                        <View style={[S.importBar, { backgroundColor: T.glass, borderColor: T.glassBorder }]}>
+                            <Pressable onPress={handleGallery}
+                                style={({ pressed }) => [S.importOption, pressed && { opacity: 0.8 }]}>
+                                <Ionicons name="images-outline" size={15} color={T.textMain} />
+                                <Text style={[S.importTxt, { color: T.textMain }]}>Photo Library</Text>
+                            </Pressable>
+                            <View style={[S.dividerV, { backgroundColor: T.glassBorder }]} />
+                            <Pressable onPress={handleFile}
+                                style={({ pressed }) => [S.importOption, pressed && { opacity: 0.8 }]}>
+                                <Ionicons name="document-text-outline" size={15} color={T.textMain} />
+                                <Text style={[S.importTxt, { color: T.textMain }]}>PDF / File</Text>
+                            </Pressable>
+                        </View>
+                    )}
                 </View>
 
-                <ScrollView contentContainerStyle={S.list} showsVerticalScrollIndicator={false}>
+                <ScrollView contentContainerStyle={[S.list, isWide && S.listWide]} showsVerticalScrollIndicator={false}>
                     {categories.map(c => renderCat(c))}
                 </ScrollView>
             </Animated.View>
@@ -1004,33 +1015,107 @@ const readBase64 = async (uri: string): Promise<string> => {
 const S = StyleSheet.create({
     safe: { flex: 1 },
     overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+
     // Header
-    header: { paddingHorizontal: 20, paddingTop: 40, paddingBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    headerLeft: { flex: 1 },
-    greeting: { fontSize: 13, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
-    title: { fontSize: 28, fontWeight: '900', letterSpacing: -0.5 },
+    header: {
+        paddingHorizontal: 16,
+        paddingTop: 32,
+        paddingBottom: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(0,0,0,0.05)',
+        flexDirection: 'column',
+    },
+    headerWide: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 48,
+        paddingTop: 40,
+        paddingBottom: 20,
+    },
+    headerLeft: {
+        marginBottom: 20,
+    },
     headerRight: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
+        gap: 12,
     },
-    themeToggle: {
-        width: 40,
-        height: 40,
+    headerRightWide: {
+        marginLeft: 'auto',
+        gap: 16,
+    },
+    greeting: {
+        fontSize: 12,
+        fontWeight: '800',
+        letterSpacing: 1.2,
+        marginBottom: 4,
+    },
+    title: {
+        fontSize: 28,
+        fontWeight: '900',
+        letterSpacing: -0.5,
+    },
+    headerToolBtn: {
+        width: 44,
+        height: 44,
         borderRadius: 12,
-        borderWidth: 1,
         alignItems: 'center',
         justifyContent: 'center',
+        borderWidth: 1,
+        position: 'relative',
+        backgroundColor: 'rgba(0,0,0,0.05)',
     },
-    actionRow: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1.5 },
-    scanBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#7C3AED', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, gap: 6, shadowColor: '#7C3AED', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 5 },
+    scanBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#7C3AED',
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 14,
+        gap: 6,
+        shadowColor: '#7C3AED',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
+        elevation: 5
+    },
     scanTxt: { color: '#fff', fontSize: 14, fontWeight: '800' },
-    importBar: { flexDirection: 'row', alignItems: 'center', borderRadius: 14, padding: 4, borderWidth: 1.5, marginTop: 14 },
-    importOption: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 9, gap: 5, borderRadius: 10 },
+    addBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 12,
+        gap: 8,
+    },
+    addBtnText: {
+        color: '#fff',
+        fontWeight: '800',
+        fontSize: 14,
+    },
+    importBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderRadius: 14,
+        padding: 4,
+        borderWidth: 1.5,
+        marginTop: 14
+    },
+    importOption: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 9,
+        gap: 5,
+        borderRadius: 10
+    },
     importTxt: { fontSize: 12, fontWeight: '700' },
     dividerV: { width: 1.5, height: 16 },
+
     // Category
     list: { padding: 16, paddingBottom: 100 },
+    listWide: { paddingHorizontal: 48, paddingTop: 20 },
     catWrap: { marginBottom: 14, borderRadius: 20, overflow: 'hidden', borderWidth: 1.5, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
     catRow: { flexDirection: 'row', alignItems: 'center', padding: 16, borderLeftWidth: 4 },
     emojiBox: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
@@ -1047,6 +1132,7 @@ const S = StyleSheet.create({
     addSmallTxt: { color: '#fff', fontSize: 12, fontWeight: '800' },
     emptyBox: { alignItems: 'center', paddingVertical: 24 },
     emptyTxt: { fontSize: 13, marginTop: 6, fontWeight: '600' },
+
     // Dish card
     dishCard: { marginHorizontal: 14, marginBottom: 10, borderRadius: 16, padding: 14, borderWidth: 1.5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 2 },
     dishTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 10 },
@@ -1062,6 +1148,7 @@ const S = StyleSheet.create({
     addBigTxt: { color: '#fff', fontWeight: '800', fontSize: 14 },
     vegDot: { width: 14, height: 14, borderRadius: 2, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
     vegInner: { width: 6, height: 6, borderRadius: 1 },
+
     // Modals
     modalCard: { borderTopLeftRadius: 28, borderTopRightRadius: 28, height: '90%', width: '100%', borderWidth: 1.5, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.18, shadowRadius: 14, elevation: 20, display: 'flex', flexDirection: 'column' },
     modalHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16, borderBottomWidth: 1.5 },
@@ -1073,6 +1160,7 @@ const S = StyleSheet.create({
     modalFoot: { flexDirection: 'row', padding: 20, borderTopWidth: 1.5, gap: 12 },
     btnCancel: { flex: 1, paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
     btnSave: { flex: 2, paddingVertical: 14, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+
     // Form
     lbl: { fontSize: 12, fontWeight: '900', marginBottom: 8, marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
     chip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1.5 },
@@ -1083,6 +1171,7 @@ const S = StyleSheet.create({
     textAreaInput: { flex: 1, height: '100%', fontSize: 14, lineHeight: 21, fontWeight: '500' },
     switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderRadius: 14, borderWidth: 1.5, marginBottom: 16 },
     errBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF2F2', padding: 12, borderRadius: 10, gap: 8, marginBottom: 12, borderWidth: 1 },
+
     // AI rewrite modal
     aiModal: { height: 'auto', maxHeight: '85%' },
     aiIconBadge: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#F3E8FF', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
@@ -1097,6 +1186,7 @@ const S = StyleSheet.create({
     histTxt: { fontSize: 10, fontWeight: '800', minWidth: 24, textAlign: 'center' },
     aiBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#7C3AED', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, gap: 4 },
     aiBtnTxt: { color: '#fff', fontSize: 11, fontWeight: '900' },
+
     // Import modal
     parsingBox: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
     spinnerWrap: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#F3E8FF', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
@@ -1105,6 +1195,7 @@ const S = StyleSheet.create({
     selRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10, marginBottom: 8, borderBottomWidth: 1 },
     parsedCard: { borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 1.5 },
     badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 7 },
+
     // Confirm
     confirmCard: { width: '100%', maxWidth: 500, borderRadius: 20, borderWidth: 1.5, padding: 18 },
     confirmHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
